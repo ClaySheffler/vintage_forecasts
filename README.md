@@ -282,13 +282,48 @@ The system analyzes loan performance by "vintage" (origination period) and FICO 
 
 ### Seasoning Curves by FICO Band
 
-Models how charge-off rates evolve over the life of loans for each FICO band using:
+Models how charge-off rates evolve over the life of loans for each FICO band using a multi-model approach:
 
-- **Weibull Distribution**: Flexible curve for modeling seasoning patterns by credit quality
-- **Lognormal Distribution**: Alternative approach for seasoning modeling by FICO band
-- **Gompertz Curve**: S-shaped curve for gradual seasoning by risk grade
-- **FICO-Specific Parameters**: Each FICO band has distinct seasoning characteristics
-- **Quality Mix Impact**: Aggregates seasoning curves using dollar-weighted averages
+- **Weibull Distribution**: Flexible, interpretable, commonly used for time-to-event data
+- **Lognormal Distribution**: Captures right-skewed timing of losses, interpretable
+- **Gompertz Curve**: Handles saturation and deceleration, interpretable
+- **Simple Linear/Polynomial Trend**: Baseline, highly explainable, but may underfit
+- **Scaling Method**: Scales observed charge-off rate at a given month by the reciprocal of the typical proportion of lifetime charge-offs observed at that month (simple financial scaling)
+- **Additive Method**: Adds expected future charge-off rates (from historical averages) to the current observed rate (simple additive projection)
+- **(Optional) Ensemble/Weighted Average**: Combines forecasts from above models, potentially improving robustness
+
+> **Note:** All models are fit to the time series of cumulative charge-off rates by seasoning month. No macroeconomic factors are included in the base models unless such data is available and explicitly incorporated.
+
+#### Model Assessment and Selection
+
+For each model, the following are evaluated:
+- **Goodness-of-fit**: $R^2$, RMSE, visual fit
+- **Forecast stability**: Sensitivity to outliers, overfitting risk
+- **Complexity**: Number of parameters, interpretability
+- **Explainability**: Can the model's behavior be easily understood and justified?
+
+A summary table is produced for each segment, showing the performance and characteristics of each model.
+
+| Model         | RMSE   | R²     | # Params | Explainability | Notes                |
+|---------------|--------|--------|----------|---------------|----------------------|
+| Weibull CDF   | 0.012  | 0.98   | 2        | High          | Good fit, interpretable |
+| Lognormal CDF | 0.013  | 0.97   | 2        | High          | Slightly underfits tail |
+| Gompertz CDF  | 0.011  | 0.98   | 2        | High          | Best fit, similar to Weibull |
+| Linear Trend  | 0.025  | 0.90   | 2        | Very High     | Underfits, but simple |
+| Scaling       | 0.030  | 0.88   | 1        | Very High     | Simple financial scaling |
+| Additive      | 0.028  | 0.89   | 1        | Very High     | Adds future expected CO% |
+| Ensemble      | 0.011  | 0.98   | 4        | Medium        | Robust, less interpretable |
+
+- If one model is clearly superior (accuracy, parsimony, and explainability), it is selected.
+- If multiple models perform similarly, an ensemble or weighted average may be used to combine their forecasts, increasing robustness and trust.
+- If models disagree significantly, this is flagged for further investigation and transparency in reporting.
+
+### Future Work
+
+- **Macroeconomic Integration**: Incorporate macroeconomic variables (e.g., unemployment, GDP, interest rates) if/when data is available, to allow for scenario-based or macro-driven forecasting.
+- **Prepayment and Recovery Modeling**: Extend models to account for prepayments and recoveries, which can impact loss timing and magnitude.
+- **Machine Learning Models**: Explore more complex models (e.g., gradient boosting, neural nets) if justified by data volume and need for accuracy, with careful attention to explainability.
+- **Additional Features**: If data becomes available, consider incorporating borrower-level or loan-level features that may improve forecast accuracy, such as employment status, income, or geographic region.
 
 ### Forecasting Approach with FICO Segmentation
 

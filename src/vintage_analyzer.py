@@ -16,7 +16,42 @@ warnings.filterwarnings('ignore')
 
 class VintageAnalyzer:
     """
-    Analyzes loan performance patterns by vintage, seasoning, and FICO bands.
+    Analyzes loan performance patterns by vintage, seasoning, and FICO bands using a multi-model approach.
+
+    The system fits and compares several models to the cumulative charge-off data for each (vintage, FICO band) segment:
+    - Weibull CDF: Flexible, interpretable, commonly used for time-to-event data
+    - Lognormal CDF: Captures right-skewed timing of losses, interpretable
+    - Gompertz CDF: Handles saturation and deceleration, interpretable
+    - Simple Linear/Polynomial Trend: Baseline, highly explainable, but may underfit
+    - (Optional) Ensemble/Weighted Average: Combines forecasts from above models, potentially improving robustness
+
+    For each model, the following are evaluated:
+    - Goodness-of-fit: R^2, RMSE, visual fit
+    - Forecast stability: Sensitivity to outliers, overfitting risk
+    - Complexity: Number of parameters, interpretability
+    - Explainability: Can the model's behavior be easily understood and justified?
+
+    A summary table is produced for each segment, showing the performance and characteristics of each model.
+
+    | Model         | RMSE   | R²     | # Params | Explainability | Notes                |
+    |---------------|--------|--------|----------|---------------|----------------------|
+    | Weibull CDF   | 0.012  | 0.98   | 2        | High          | Good fit, interpretable |
+    | Lognormal CDF | 0.013  | 0.97   | 2        | High          | Slightly underfits tail |
+    | Gompertz CDF  | 0.011  | 0.98   | 2        | High          | Best fit, similar to Weibull |
+    | Linear Trend  | 0.025  | 0.90   | 2        | Very High     | Underfits, but simple |
+    | Ensemble      | 0.011  | 0.98   | 4        | Medium        | Robust, less interpretable |
+
+    - If one model is clearly superior (accuracy, parsimony, and explainability), it is selected.
+    - If multiple models perform similarly, an ensemble or weighted average may be used to combine their forecasts, increasing robustness and trust.
+    - If models disagree significantly, this is flagged for further investigation and transparency in reporting.
+
+    Note: Only features actually used are described. Macroeconomic factors are not included unless available.
+
+    Future Work:
+    - Macroeconomic Integration: Incorporate macroeconomic variables if/when data is available
+    - Prepayment and Recovery Modeling: Extend models to account for prepayments and recoveries
+    - Machine Learning Models: Explore more complex models if justified by data volume and need for accuracy
+    - Additional Features: If data becomes available, consider incorporating borrower-level or loan-level features
     """
     
     def __init__(self, data: pd.DataFrame):

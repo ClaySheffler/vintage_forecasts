@@ -26,13 +26,13 @@ This document provides a rigorous, transparent, and reproducible explanation of 
 ## 1.1. Data Structure
 
 - **Panel data**: Each row = loan, vintage, seasoning month.
-- **Key fields**: `loan_id`, `vintage_date`, `seasoning_month`, `fico_score`, `loan_amount`, `charge_off_rate`, `charge_off_amount`, `outstanding_balance`, `term`, `fico_band`, `risk_grade`.
+- **Key fields**: `loan_id`, `vintage_date`, `seasoning_month`, `charge_off_rate`, `charge_off_amount`, `outstanding_balance`, `term`, `fico_band`.
 
 ## 1.2. Data Cleaning and Validation
 
 - **Date parsing**: All dates are converted to pandas `datetime`.
 - **Missing values**: Critical fields must be present; others are imputed or flagged.
-- **Outlier detection**: Loans with implausible values (e.g., negative balances, FICO out of range) are flagged.
+- **Outlier detection**: Loans with implausible values (e.g., negative balances) are flagged.
 - **FICO band assignment**: Explicit cutoffs, e.g., 600-649, 650-699, etc.
 
 ```{python}
@@ -45,7 +45,7 @@ def assign_fico_band(fico):
     else: return '<600'
 ```
 
-# 2. Vintage Cohorts and Seasoning Curves
+# 2. Multi-Model Seasoning Curve Approach
 
 ## 2.1. Cohort Definition
 
@@ -59,23 +59,26 @@ def assign_fico_band(fico):
 - **Incremental**:  
   $I_t = \frac{\text{charge\_off\_amount}_t}{\text{original\_loan\_amount}}$
 
-## 2.3. Mathematical Models for Seasoning
+## 2.3. Model Candidates
 
-### Weibull CDF
-$F(t; \alpha, \beta) = 1 - \exp\left(-\left(\frac{t}{\beta}\right)^\alpha\right)$
+To increase trust and transparency, the system fits and compares several models to the cumulative charge-off data for each (vintage, FICO band) segment:
 
-### Lognormal CDF
-$F(t; \mu, \sigma) = \Phi\left(\frac{\ln t - \mu}{\sigma}\right)$
+- **Weibull CDF**: Flexible, interpretable, commonly used for time-to-event data.
+- **Lognormal CDF**: Captures right-skewed timing of losses, interpretable.
+- **Gompertz CDF**: Handles saturation and deceleration, interpretable.
+- **Simple Linear/Polynomial Trend**: Baseline, highly explainable, but may underfit.
+- **Scaling Method**: Scales observed charge-off rate at a given month by the reciprocal of the typical proportion of lifetime charge-offs observed at that month (simple financial scaling).
+- **Additive Method**: Adds expected future charge-off rates (from historical averages) to the current observed rate (simple additive projection).
+- **(Optional) Ensemble/Weighted Average**: Combines forecasts from above models, potentially improving robustness.
 
-### Gompertz CDF
-$F(t; a, b) = 1 - \exp\left(-a \frac{\exp(b t) - 1}{b}\right)$
+> **Note:** All models are fit to the time series of cumulative charge-off rates by seasoning month. No macroeconomic factors are included in the base models unless such data is available and explicitly incorporated.
 
 ## 2.4. Curve Fitting Procedure
 
 - For each (vintage, FICO band), compute cumulative charge-off rates by seasoning month.
-- Use nonlinear least squares (scipy.optimize.curve_fit) to fit each curve.
+- Use nonlinear least squares (scipy.optimize.curve_fit) or linear regression to fit each curve.
 - Goodness-of-fit: $R^2$, RMSE, visual inspection.
-- Select best-fitting curve for each segment.
+- Select best-fitting curve or ensemble for each segment.
 
 ```{python}
 from scipy.optimize import curve_fit
@@ -84,6 +87,13 @@ import numpy as np
 def weibull_cdf(t, alpha, beta):
     return 1 - np.exp(-(t / beta) ** alpha)
 
+def lognormal_cdf(t, mu, sigma):
+    from scipy.stats import norm
+    return norm.cdf((np.log(t) - mu) / sigma)
+
+def gompertz_cdf(t, a, b):
+    return 1 - np.exp(-a * (np.exp(b * t) - 1) / b)
+
 # Example fit:
 t = np.arange(1, 37)
 y = np.array([0.01, 0.02, 0.03, ...])  # Cumulative charge-off rates
@@ -91,11 +101,32 @@ params, _ = curve_fit(weibull_cdf, t, y, p0=[1.5, 20])
 fitted = weibull_cdf(t, *params)
 ```
 
-## 2.5. Model Selection and Validation
+## 2.5. Model Assessment and Selection
 
-- Compare $R^2$ and RMSE for each model.
-- Use AIC/BIC for model parsimony if needed.
-- Visualize fit and residuals.
+For each model, the following are evaluated:
+
+- **Goodness-of-fit**: $R^2$, RMSE, visual fit
+- **Forecast stability**: Sensitivity to outliers, overfitting risk
+- **Complexity**: Number of parameters, interpretability
+- **Explainability**: Can the model's behavior be easily understood and justified?
+
+A summary table is produced for each segment, showing the performance and characteristics of each model.
+
+### Example Table: Model Comparison
+
+| Model         | RMSE   | R²     | # Params | Explainability | Notes                |
+|---------------|--------|--------|----------|---------------|----------------------|
+| Weibull CDF   | 0.012  | 0.98   | 2        | High          | Good fit, interpretable |
+| Lognormal CDF | 0.013  | 0.97   | 2        | High          | Slightly underfits tail |
+| Gompertz CDF  | 0.011  | 0.98   | 2        | High          | Best fit, similar to Weibull |
+| Linear Trend  | 0.025  | 0.90   | 2        | Very High     | Underfits, but simple |
+| Scaling       | 0.030  | 0.88   | 1        | Very High     | Simple financial scaling |
+| Additive      | 0.028  | 0.89   | 1        | Very High     | Adds future expected CO% |
+| Ensemble      | 0.011  | 0.98   | 4        | Medium        | Robust, less interpretable |
+
+- If one model is clearly superior (accuracy, parsimony, and explainability), it is selected.
+- If multiple models perform similarly, an ensemble or weighted average may be used to combine their forecasts, increasing robustness and trust.
+- If models disagree significantly, this is flagged for further investigation and transparency in reporting.
 
 # 3. Forecasting and Aggregation
 
@@ -156,7 +187,14 @@ where $w_b$ is the portfolio share of FICO band $b$.
 - Does not model prepayment or recovery explicitly (can be extended).
 - Economic overlays are scenario-based, not macro-driven (can be extended).
 
-# 8. References
+# 8. Future Work
+
+- **Macroeconomic Integration**: Incorporate macroeconomic variables (e.g., unemployment, GDP, interest rates) if/when data is available, to allow for scenario-based or macro-driven forecasting.
+- **Prepayment and Recovery Modeling**: Extend models to account for prepayments and recoveries, which can impact loss timing and magnitude.
+- **Machine Learning Models**: Explore more complex models (e.g., gradient boosting, neural nets) if justified by data volume and need for accuracy, with careful attention to explainability.
+- **Additional Features**: If data becomes available, consider incorporating borrower-level or loan-level features that may improve forecast accuracy, such as employment status, income, or geographic region.
+
+# 9. References
 
 - [Weibull Distribution](https://en.wikipedia.org/wiki/Weibull_distribution)
 - [Gompertz Function](https://en.wikipedia.org/wiki/Gompertz_function)
