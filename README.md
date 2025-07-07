@@ -34,16 +34,27 @@ Each FICO band has distinct seasoning patterns, vintage performance characterist
 
 ```
 vintage_forecasts/
-├── src/
+├── src/                        # Core source code
 │   ├── __init__.py
-│   ├── data_loader.py          # Data loading and preprocessing
-│   ├── vintage_analyzer.py     # Vintage analysis and seasoning curves
-│   └── forecaster.py           # Charge-off forecasting engine
-├── notebooks/
+│   ├── data_loader.py          # Data loading and preprocessing with flexible format support
+│   ├── vintage_analyzer.py     # Vintage analysis and seasoning curves by FICO band
+│   └── forecaster.py           # Charge-off forecasting engine with FICO segmentation
+├── docs/                       # Documentation
+│   ├── SYSTEM_OVERVIEW.md      # Detailed system architecture documentation
+│   └── FLEXIBLE_DATA_HANDLING.md # Comprehensive guide to flexible data handling
+├── examples/                   # Example scripts and demonstrations
+│   ├── example.py              # Step-by-step usage examples
+│   └── demo_flexible_data.py   # Flexible data handling demonstration
+├── tests/                      # Test suite
+│   ├── test_vintage_forecasts.py   # Comprehensive test suite
+│   ├── test_fico_segmentation.py   # FICO segmentation specific tests
+│   └── test_system.py              # System integration tests
+├── notebooks/                  # Jupyter notebooks
 │   └── vintage_forecasting_demo.ipynb  # Interactive demo notebook
-├── outputs/                    # Generated reports and visualizations
-├── main.py                     # Main execution script
+├── main.py                     # Main execution script with FICO segmentation demo
 ├── requirements.txt            # Python dependencies
+├── LICENSE                     # MIT License
+├── .gitignore                  # Git ignore rules
 └── README.md                   # This file
 ```
 
@@ -72,19 +83,18 @@ python main.py
 Run the complete FICO-segmented forecasting workflow:
 
 ```python
-from src.data_loader import LoanDataLoader
+from src.data_loader import DataLoader
 from src.vintage_analyzer import VintageAnalyzer
 from src.forecaster import ChargeOffForecaster
 
 # Load data with FICO segmentation
-data_loader = LoanDataLoader()
+data_loader = DataLoader()
 loan_data = data_loader.load_data(source='synthetic')  # or 'file' for real data
 loan_data = data_loader.preprocess_data()
 
 # Perform vintage analysis by FICO band
-vintage_analyzer = VintageAnalyzer(loan_data)
-vintage_metrics = vintage_analyzer.calculate_vintage_metrics()
-seasoning_curves = vintage_analyzer.fit_seasoning_curves()
+vintage_analyzer = VintageAnalyzer()
+vintage_metrics = vintage_analyzer.analyze_vintage_data(loan_data)
 
 # Create FICO-segmented forecasts
 forecaster = ChargeOffForecaster(vintage_analyzer, loan_data)
@@ -104,6 +114,34 @@ forecast = forecaster.forecast_vintage_charge_offs_by_fico(
     portfolio_mix=portfolio_mix,
     forecast_horizon=120
 )
+```
+
+### Available Scripts
+
+#### Main Script (`main.py`)
+Complete demonstration of the FICO-segmented vintage forecasting system:
+```bash
+python main.py
+```
+
+#### Example Script (`examples/example.py`)
+Step-by-step examples of key features:
+```bash
+python examples/example.py
+```
+
+#### Flexible Data Handling Demo (`examples/demo_flexible_data.py`)
+Demonstration of the flexible data handling feature:
+```bash
+python examples/demo_flexible_data.py
+```
+
+#### Test Suite
+Run comprehensive tests:
+```bash
+python tests/test_vintage_forecasts.py
+python tests/test_fico_segmentation.py
+python tests/test_system.py
 ```
 
 ### Data Format Requirements
@@ -197,9 +235,11 @@ jupyter notebook notebooks/vintage_forecasting_demo.ipynb
 
 ### 1. Data Loader (`src/data_loader.py`)
 
-Handles loading and preprocessing of loan performance data with FICO segmentation:
+Handles loading and preprocessing of loan performance data with FICO segmentation and flexible data format support:
 
 - **FICO Segmentation**: Assigns loans to FICO bands and risk grades
+- **Flexible Data Handling**: Supports both complete and incomplete vintage data formats
+- **Automatic Data Completion**: Fills missing seasoning months for charged-off loans
 - **Synthetic Data Generation**: Creates realistic loan performance data with FICO characteristics
 - **File Loading**: Supports CSV, Excel, and Parquet formats with FICO validation
 - **Data Preprocessing**: Converts dates, calculates vintage metrics by FICO band, handles missing values
@@ -207,10 +247,11 @@ Handles loading and preprocessing of loan performance data with FICO segmentatio
 
 ### 2. Vintage Analyzer (`src/vintage_analyzer.py`)
 
-Performs comprehensive vintage analysis with FICO segmentation:
+Performs comprehensive vintage analysis with FICO segmentation and charge-off pattern analysis:
 
 - **Vintage Metrics by FICO**: Calculates charge-off rates by vintage, seasoning, and FICO band
 - **Seasoning Curves by FICO**: Fits mathematical curves to historical seasoning patterns for each FICO band
+- **Charge-off Pattern Analysis**: Analyzes charge-off timing, amounts, and cumulative patterns by FICO band
 - **Vintage Quality by FICO**: Analyzes early performance indicators by credit quality
 - **Pattern Recognition**: Identifies seasonal and trend patterns by FICO band
 - **Quality Mix Trends**: Analyzes changes in portfolio quality composition over time
@@ -379,6 +420,17 @@ To contribute to this project:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## Documentation
+
+### System Overview (`docs/SYSTEM_OVERVIEW.md`)
+Comprehensive documentation of the system architecture, methodology, and implementation details.
+
+### Flexible Data Handling (`docs/FLEXIBLE_DATA_HANDLING.md`)
+Detailed guide to the flexible data handling feature, including usage examples and best practices.
+
+### Interactive Demo (`examples/demo_flexible_data.py`)
+Standalone demonstration script showing how the flexible data handling works.
+
 ## Support
 
 For questions or support, please contact the development team or create an issue in the repository.
@@ -388,6 +440,8 @@ For questions or support, please contact the development team or create an issue
 - **v1.0.0**: Initial release with core forecasting functionality
 - **v1.1.0**: Added scenario analysis and risk metrics
 - **v1.2.0**: Enhanced visualizations and export capabilities
+- **v1.3.0**: Added FICO segmentation and quality mix analysis
+- **v1.4.0**: Added flexible data handling for complete and incomplete vintage data formats
 
 ## Data Handling Flexibility
 
