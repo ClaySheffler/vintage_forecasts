@@ -1,6 +1,6 @@
 """
-Charge-off forecaster using vintage analysis and time series methods.
-Combines historical vintage patterns with forward-looking projections.
+Charge-off forecaster using vintage analysis and time series methods with FICO segmentation.
+Combines historical vintage patterns with forward-looking projections by FICO band.
 """
 
 import pandas as pd
@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 
 class ChargeOffForecaster:
     """
-    Forecasts future charge-offs using vintage analysis and time series methods.
+    Forecasts future charge-offs using vintage analysis and time series methods with FICO segmentation.
     """
     
     def __init__(self, vintage_analyzer, data: pd.DataFrame):
@@ -26,37 +26,94 @@ class ChargeOffForecaster:
         
         Args:
             vintage_analyzer: VintageAnalyzer instance with fitted seasoning curves
-            data: Loan performance data
+            data: Loan performance data with FICO segmentation
         """
         self.vintage_analyzer = vintage_analyzer
         self.data = data
         self.forecast_results = None
         self.seasoning_curves = vintage_analyzer.seasoning_curves
+        self.fico_bands = data['fico_band'].unique() if 'fico_band' in data.columns else []
         
-    def forecast_vintage_charge_offs(self, 
-                                   vintage_date: datetime,
-                                   loan_amount: float,
-                                   num_loans: int,
-                                   forecast_horizon: int = 120,
-                                   vintage_quality_adjustment: float = 1.0) -> pd.DataFrame:
+    def forecast_vintage_charge_offs_by_fico(self, 
+                                           vintage_date: datetime,
+                                           portfolio_mix: Dict[str, Dict],
+                                           forecast_horizon: int = 120,
+                                           vintage_quality_adjustments: Optional[Dict[str, float]] = None) -> pd.DataFrame:
         """
-        Forecast charge-offs for a specific vintage.
+        Forecast charge-offs for a specific vintage by FICO band.
         
         Args:
             vintage_date: Origination date of the vintage
-            loan_amount: Total loan amount for the vintage
-            num_loans: Number of loans in the vintage
+            portfolio_mix: Dictionary with FICO band mix information
+                          Format: {'fico_band': {'loan_amount': float, 'num_loans': int}}
             forecast_horizon: Number of months to forecast
-            vintage_quality_adjustment: Multiplier to adjust vintage quality (1.0 = average)
+            vintage_quality_adjustments: Optional adjustments by FICO band
+            
+        Returns:
+            DataFrame with forecasted charge-off rates and amounts by FICO band
+        """
+        all_forecasts = []
+        
+        for fico_band, mix_info in portfolio_mix.items():
+            loan_amount = mix_info['loan_amount']
+            num_loans = mix_info['num_loans']
+            
+            # Get vintage quality adjustment for this FICO band
+            if vintage_quality_adjustments and fico_band in vintage_quality_adjustments:
+                vintage_quality_adjustment = vintage_quality_adjustments[fico_band]
+            else:
+                vintage_quality_adjustment = 1.0
+            
+            # Forecast this FICO band
+            band_forecast = self._forecast_single_fico_band(
+                vintage_date=vintage_date,
+                fico_band=fico_band,
+                loan_amount=loan_amount,
+                num_loans=num_loans,
+                forecast_horizon=forecast_horizon,
+                vintage_quality_adjustment=vintage_quality_adjustment
+            )
+            
+            all_forecasts.append(band_forecast)
+        
+        # Combine all FICO band forecasts
+        combined_forecast = pd.concat(all_forecasts, ignore_index=True)
+        
+        # Calculate aggregate (dollar-weighted) metrics
+        aggregate_forecast = self._calculate_aggregate_forecast(combined_forecast)
+        
+        return aggregate_forecast
+    
+    def _forecast_single_fico_band(self, 
+                                  vintage_date: datetime,
+                                  fico_band: str,
+                                  loan_amount: float,
+                                  num_loans: int,
+                                  forecast_horizon: int,
+                                  vintage_quality_adjustment: float = 1.0) -> pd.DataFrame:
+        """
+        Forecast charge-offs for a single FICO band within a vintage.
+        
+        Args:
+            vintage_date: Origination date of the vintage
+            fico_band: FICO band to forecast
+            loan_amount: Total loan amount for this FICO band
+            num_loans: Number of loans in this FICO band
+            forecast_horizon: Number of months to forecast
+            vintage_quality_adjustment: Multiplier to adjust vintage quality
             
         Returns:
             DataFrame with forecasted charge-off rates and amounts
         """
-        # Get the best fitting seasoning curve
-        best_curve = self._get_best_seasoning_curve()
+        # Get the best fitting seasoning curve for this FICO band
+        best_curve = self._get_best_seasoning_curve(fico_band)
         
         if best_curve is None:
-            raise ValueError("No valid seasoning curves found. Run fit_seasoning_curves() first.")
+            # Fall back to aggregate curve if FICO-specific curve not available
+            best_curve = self._get_best_seasoning_curve('aggregate')
+            
+        if best_curve is None:
+            raise ValueError(f"No valid seasoning curves found for FICO band {fico_band}")
         
         # Generate seasoning months for forecast
         seasoning_months = np.arange(0, forecast_horizon + 1)
@@ -68,7 +125,6 @@ class ChargeOffForecaster:
         adjusted_charge_off_rates = base_charge_off_rates * vintage_quality_adjustment
         
         # Calculate outstanding balances (assuming linear amortization)
-        avg_loan_size = loan_amount / num_loans
         outstanding_balances = []
         
         for month in seasoning_months:
@@ -82,6 +138,7 @@ class ChargeOffForecaster:
         # Create forecast DataFrame
         forecast_df = pd.DataFrame({
             'vintage_date': vintage_date,
+            'fico_band': fico_band,
             'seasoning_month': seasoning_months,
             'outstanding_balance': outstanding_balances,
             'charge_off_rate': adjusted_charge_off_rates,
@@ -92,15 +149,46 @@ class ChargeOffForecaster:
         
         return forecast_df
     
+    def _calculate_aggregate_forecast(self, fico_forecasts: pd.DataFrame) -> pd.DataFrame:
+        """
+        Calculate aggregate (dollar-weighted) forecast from FICO band forecasts.
+        
+        Args:
+            fico_forecasts: DataFrame with forecasts by FICO band
+            
+        Returns:
+            DataFrame with aggregate forecast
+        """
+        # Group by vintage_date and seasoning_month, sum amounts
+        aggregate_forecast = fico_forecasts.groupby(['vintage_date', 'seasoning_month']).agg({
+            'outstanding_balance': 'sum',
+            'charge_off_amount': 'sum',
+            'cumulative_charge_off_amount': 'sum'
+        }).reset_index()
+        
+        # Calculate dollar-weighted charge-off rate
+        aggregate_forecast['charge_off_rate'] = (
+            aggregate_forecast['charge_off_amount'] / aggregate_forecast['outstanding_balance']
+        )
+        
+        # Calculate cumulative charge-off rate
+        total_loan_amount = fico_forecasts.groupby('vintage_date')['outstanding_balance'].first().sum()
+        aggregate_forecast['cumulative_charge_off_rate'] = (
+            aggregate_forecast['cumulative_charge_off_amount'] / total_loan_amount
+        )
+        
+        return aggregate_forecast
+    
     def forecast_portfolio_charge_offs(self, 
                                      portfolio_data: pd.DataFrame,
                                      forecast_end_date: datetime,
                                      vintage_quality_model: Optional[Dict] = None) -> pd.DataFrame:
         """
-        Forecast charge-offs for an entire portfolio.
+        Forecast charge-offs for an entire portfolio with FICO segmentation.
         
         Args:
-            portfolio_data: DataFrame with vintage information (vintage_date, loan_amount, num_loans)
+            portfolio_data: DataFrame with vintage and FICO band information
+                           Columns: vintage_date, fico_band, loan_amount, num_loans
             forecast_end_date: End date for the forecast
             vintage_quality_model: Optional model to predict vintage quality adjustments
             
@@ -109,30 +197,35 @@ class ChargeOffForecaster:
         """
         all_forecasts = []
         
-        for _, vintage_info in portfolio_data.iterrows():
-            vintage_date = vintage_info['vintage_date']
-            loan_amount = vintage_info['loan_amount']
-            num_loans = vintage_info['num_loans']
+        # Group by vintage date
+        for vintage_date in portfolio_data['vintage_date'].unique():
+            vintage_data = portfolio_data[portfolio_data['vintage_date'] == vintage_date]
             
-            # Determine vintage quality adjustment
+            # Create portfolio mix for this vintage
+            portfolio_mix = {}
+            for _, row in vintage_data.iterrows():
+                portfolio_mix[row['fico_band']] = {
+                    'loan_amount': row['loan_amount'],
+                    'num_loans': row['num_loans']
+                }
+            
+            # Determine vintage quality adjustments by FICO band
+            vintage_quality_adjustments = None
             if vintage_quality_model is not None:
-                vintage_quality_adjustment = self._predict_vintage_quality(
+                vintage_quality_adjustments = self._predict_vintage_quality_by_fico(
                     vintage_date, vintage_quality_model
                 )
-            else:
-                vintage_quality_adjustment = 1.0
             
             # Calculate forecast horizon
             forecast_horizon = ((forecast_end_date.year - vintage_date.year) * 12 + 
                               forecast_end_date.month - vintage_date.month)
             
-            # Forecast this vintage
-            vintage_forecast = self.forecast_vintage_charge_offs(
+            # Forecast this vintage by FICO band
+            vintage_forecast = self.forecast_vintage_charge_offs_by_fico(
                 vintage_date=vintage_date,
-                loan_amount=loan_amount,
-                num_loans=num_loans,
+                portfolio_mix=portfolio_mix,
                 forecast_horizon=forecast_horizon,
-                vintage_quality_adjustment=vintage_quality_adjustment
+                vintage_quality_adjustments=vintage_quality_adjustments
             )
             
             all_forecasts.append(vintage_forecast)
@@ -142,7 +235,7 @@ class ChargeOffForecaster:
         
         # Aggregate by report date
         portfolio_forecast['report_date'] = portfolio_forecast.apply(
-            lambda row: vintage_date + pd.DateOffset(months=row['seasoning_month']), axis=1
+            lambda row: row['vintage_date'] + pd.DateOffset(months=row['seasoning_month']), axis=1
         )
         
         # Group by report date and sum
@@ -159,62 +252,109 @@ class ChargeOffForecaster:
         self.forecast_results = portfolio_summary
         return portfolio_summary
     
-    def _get_best_seasoning_curve(self) -> Optional[Dict]:
-        """Get the best fitting seasoning curve based on R-squared."""
-        if not self.seasoning_curves:
+    def _get_best_seasoning_curve(self, fico_band: str) -> Optional[Dict]:
+        """Get the best fitting seasoning curve for a specific FICO band."""
+        if not self.seasoning_curves or fico_band not in self.seasoning_curves:
             return None
         
         best_curve = None
         best_r_squared = -1
         
-        for curve_name, curve_info in self.seasoning_curves.items():
+        for curve_name, curve_info in self.seasoning_curves[fico_band].items():
             if curve_info is not None and curve_info['r_squared'] > best_r_squared:
                 best_r_squared = curve_info['r_squared']
                 best_curve = curve_info
         
         return best_curve
     
-    def _predict_vintage_quality(self, vintage_date: datetime, model: Dict) -> float:
+    def _predict_vintage_quality_by_fico(self, vintage_date: datetime, model: Dict) -> Dict[str, float]:
         """
-        Predict vintage quality adjustment based on historical patterns.
+        Predict vintage quality adjustment by FICO band based on historical patterns.
         
         Args:
             vintage_date: Vintage date to predict quality for
             model: Dictionary with vintage quality prediction model
             
         Returns:
-            Vintage quality adjustment factor
+            Dictionary with vintage quality adjustment factors by FICO band
         """
-        # Extract features for prediction
-        vintage_month = vintage_date.month
-        vintage_year = vintage_date.year
+        adjustments = {}
         
-        # Simple model based on seasonal patterns
-        if 'monthly_seasonality' in model:
-            monthly_effect = model['monthly_seasonality'].get(vintage_month, 1.0)
-        else:
-            monthly_effect = 1.0
-        
-        # Yearly trend effect
-        if 'yearly_trends' in model:
-            # Use average of recent years as baseline
-            recent_years = [y for y in model['yearly_trends'].keys() if y >= vintage_year - 3]
-            if recent_years:
-                baseline = np.mean([model['yearly_trends'][y] for y in recent_years])
-                current_trend = model['yearly_trends'].get(vintage_year, baseline)
-                trend_effect = current_trend / baseline if baseline > 0 else 1.0
+        for fico_band in self.fico_bands:
+            # Extract features for prediction
+            vintage_month = vintage_date.month
+            vintage_year = vintage_date.year
+            
+            # Get FICO-specific seasonal patterns
+            monthly_key = f'monthly_seasonality_{fico_band}'
+            yearly_key = f'yearly_trends_{fico_band}'
+            
+            # Monthly seasonality effect
+            if monthly_key in model:
+                monthly_effect = model[monthly_key].get(vintage_month, 1.0)
+            else:
+                monthly_effect = 1.0
+            
+            # Yearly trend effect
+            if yearly_key in model:
+                # Use average of recent years as baseline
+                recent_years = [y for y in model[yearly_key].keys() if y >= vintage_year - 3]
+                if recent_years:
+                    baseline = np.mean([model[yearly_key][y] for y in recent_years])
+                    current_trend = model[yearly_key].get(vintage_year, baseline)
+                    trend_effect = current_trend / baseline if baseline > 0 else 1.0
+                else:
+                    trend_effect = 1.0
             else:
                 trend_effect = 1.0
-        else:
-            trend_effect = 1.0
+            
+            # Combine effects
+            quality_adjustment = monthly_effect * trend_effect
+            
+            # Ensure reasonable bounds
+            quality_adjustment = max(0.5, min(2.0, quality_adjustment))
+            
+            adjustments[fico_band] = quality_adjustment
         
-        # Combine effects
-        quality_adjustment = monthly_effect * trend_effect
+        return adjustments
+    
+    def forecast_vintage_charge_offs(self, 
+                                   vintage_date: datetime,
+                                   loan_amount: float,
+                                   num_loans: int,
+                                   forecast_horizon: int = 120,
+                                   vintage_quality_adjustment: float = 1.0) -> pd.DataFrame:
+        """
+        Legacy method for backward compatibility - forecasts aggregate vintage.
         
-        # Ensure reasonable bounds
-        quality_adjustment = max(0.5, min(2.0, quality_adjustment))
+        Args:
+            vintage_date: Origination date of the vintage
+            loan_amount: Total loan amount for the vintage
+            num_loans: Number of loans in the vintage
+            forecast_horizon: Number of months to forecast
+            vintage_quality_adjustment: Multiplier to adjust vintage quality
+            
+        Returns:
+            DataFrame with forecasted charge-off rates and amounts
+        """
+        # Create a simple portfolio mix (assume equal distribution across FICO bands)
+        portfolio_mix = {}
+        loan_amount_per_band = loan_amount / len(self.fico_bands)
+        num_loans_per_band = num_loans // len(self.fico_bands)
         
-        return quality_adjustment
+        for fico_band in self.fico_bands:
+            portfolio_mix[fico_band] = {
+                'loan_amount': loan_amount_per_band,
+                'num_loans': num_loans_per_band
+            }
+        
+        # Use the FICO-segmented forecast method
+        return self.forecast_vintage_charge_offs_by_fico(
+            vintage_date=vintage_date,
+            portfolio_mix=portfolio_mix,
+            forecast_horizon=forecast_horizon,
+            vintage_quality_adjustments={band: vintage_quality_adjustment for band in self.fico_bands}
+        )
     
     def generate_scenario_forecasts(self, 
                                   base_forecast: pd.DataFrame,
@@ -296,7 +436,7 @@ class ChargeOffForecaster:
             save_path: Optional path to save the plot
         """
         fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle('Charge-off Forecast Dashboard', fontsize=16, fontweight='bold')
+        fig.suptitle('Charge-off Forecast Dashboard - FICO Segmentation', fontsize=16, fontweight='bold')
         
         # 1. Monthly charge-off amounts
         axes[0, 0].plot(forecast_df['report_date'], forecast_df['charge_off_amount'], 

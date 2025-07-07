@@ -1,6 +1,6 @@
 """
-Vintage analysis for loan charge-off forecasting.
-Analyzes loan performance patterns by vintage and seasoning periods.
+Vintage analysis for loan charge-off forecasting with FICO segmentation.
+Analyzes loan performance patterns by vintage, seasoning, and FICO bands.
 """
 
 import pandas as pd
@@ -16,7 +16,7 @@ warnings.filterwarnings('ignore')
 
 class VintageAnalyzer:
     """
-    Analyzes loan performance patterns by vintage and seasoning.
+    Analyzes loan performance patterns by vintage, seasoning, and FICO bands.
     """
     
     def __init__(self, data: pd.DataFrame):
@@ -24,21 +24,22 @@ class VintageAnalyzer:
         Initialize the vintage analyzer.
         
         Args:
-            data: Loan performance data with vintage_date and seasoning_month columns
+            data: Loan performance data with vintage_date, seasoning_month, and fico_band columns
         """
         self.data = data
         self.vintage_summary = None
         self.seasoning_curves = None
+        self.fico_bands = data['fico_band'].unique() if 'fico_band' in data.columns else []
         
     def calculate_vintage_metrics(self) -> pd.DataFrame:
         """
-        Calculate vintage-level performance metrics.
+        Calculate vintage-level performance metrics by FICO band.
         
         Returns:
-            DataFrame with vintage performance metrics
+            DataFrame with vintage performance metrics by FICO band
         """
-        # Group by vintage and seasoning month
-        vintage_metrics = self.data.groupby(['vintage_date', 'seasoning_month']).agg({
+        # Group by vintage, FICO band, and seasoning month
+        vintage_metrics = self.data.groupby(['vintage_date', 'fico_band', 'seasoning_month']).agg({
             'loan_amount': 'sum',
             'outstanding_balance': 'sum',
             'charge_off_amount': 'sum',
@@ -50,8 +51,8 @@ class VintageAnalyzer:
             vintage_metrics['charge_off_amount'] / vintage_metrics['outstanding_balance']
         )
         vintage_metrics['cumulative_charge_off_rate'] = (
-            vintage_metrics.groupby('vintage_date')['charge_off_amount'].cumsum() /
-            vintage_metrics.groupby('vintage_date')['loan_amount'].first()
+            vintage_metrics.groupby(['vintage_date', 'fico_band'])['charge_off_amount'].cumsum() /
+            vintage_metrics.groupby(['vintage_date', 'fico_band'])['loan_amount'].first()
         )
         
         # Calculate vintage characteristics
@@ -59,18 +60,56 @@ class VintageAnalyzer:
             vintage_metrics['loan_amount'] / vintage_metrics['loan_id']
         )
         
+        # Add risk grade
+        if 'risk_grade' in self.data.columns:
+            risk_grade_map = self.data.groupby('fico_band')['risk_grade'].first().to_dict()
+            vintage_metrics['risk_grade'] = vintage_metrics['fico_band'].map(risk_grade_map)
+        
         self.vintage_summary = vintage_metrics
         return vintage_metrics
     
+    def calculate_aggregate_vintage_metrics(self) -> pd.DataFrame:
+        """
+        Calculate aggregate vintage metrics (dollar-weighted across FICO bands).
+        
+        Returns:
+            DataFrame with aggregate vintage performance metrics
+        """
+        if self.vintage_summary is None:
+            self.calculate_vintage_metrics()
+        
+        # Aggregate across FICO bands for each vintage and seasoning month
+        aggregate_metrics = self.vintage_summary.groupby(['vintage_date', 'seasoning_month']).agg({
+            'loan_amount': 'sum',
+            'outstanding_balance': 'sum',
+            'charge_off_amount': 'sum',
+            'loan_id': 'sum'
+        }).reset_index()
+        
+        # Calculate dollar-weighted charge-off rates
+        aggregate_metrics['charge_off_rate'] = (
+            aggregate_metrics['charge_off_amount'] / aggregate_metrics['outstanding_balance']
+        )
+        aggregate_metrics['cumulative_charge_off_rate'] = (
+            aggregate_metrics.groupby('vintage_date')['charge_off_amount'].cumsum() /
+            aggregate_metrics.groupby('vintage_date')['loan_amount'].first()
+        )
+        
+        aggregate_metrics['avg_loan_size'] = (
+            aggregate_metrics['loan_amount'] / aggregate_metrics['loan_id']
+        )
+        
+        return aggregate_metrics
+    
     def fit_seasoning_curves(self, max_seasoning: int = 120) -> Dict:
         """
-        Fit seasoning curves to historical data.
+        Fit seasoning curves to historical data by FICO band.
         
         Args:
             max_seasoning: Maximum seasoning months to consider
             
         Returns:
-            Dictionary with fitted seasoning curve parameters
+            Dictionary with fitted seasoning curve parameters by FICO band
         """
         if self.vintage_summary is None:
             self.calculate_vintage_metrics()
@@ -93,70 +132,110 @@ class VintageAnalyzer:
             """Gompertz curve for seasoning"""
             return alpha * np.exp(-beta * np.exp(-gamma * x))
         
-        # Fit curves to average seasoning pattern
-        avg_seasoning = curve_data.groupby('seasoning_month')['charge_off_rate'].mean().reset_index()
-        
         curves = {}
         
-        # Fit Weibull curve
+        # Fit curves for each FICO band
+        for fico_band in self.fico_bands:
+            band_data = curve_data[curve_data['fico_band'] == fico_band]
+            avg_seasoning = band_data.groupby('seasoning_month')['charge_off_rate'].mean().reset_index()
+            
+            if len(avg_seasoning) < 10:  # Need sufficient data points
+                continue
+                
+            band_curves = {}
+            
+            # Fit Weibull curve
+            try:
+                popt_weibull, _ = curve_fit(
+                    weibull_curve, 
+                    avg_seasoning['seasoning_month'], 
+                    avg_seasoning['charge_off_rate'],
+                    p0=[0.05, 24, 2],
+                    bounds=([0, 1, 0.1], [0.3, 60, 10])
+                )
+                band_curves['weibull'] = {
+                    'function': weibull_curve,
+                    'params': popt_weibull,
+                    'r_squared': self._calculate_r_squared(
+                        avg_seasoning['charge_off_rate'],
+                        weibull_curve(avg_seasoning['seasoning_month'], *popt_weibull)
+                    )
+                }
+            except:
+                band_curves['weibull'] = None
+            
+            # Fit Lognormal curve
+            try:
+                popt_lognorm, _ = curve_fit(
+                    lognormal_curve,
+                    avg_seasoning['seasoning_month'],
+                    avg_seasoning['charge_off_rate'],
+                    p0=[0.05, 3, 0.5],
+                    bounds=([0, 1, 0.1], [0.3, 5, 2])
+                )
+                band_curves['lognormal'] = {
+                    'function': lognormal_curve,
+                    'params': popt_lognorm,
+                    'r_squared': self._calculate_r_squared(
+                        avg_seasoning['charge_off_rate'],
+                        lognormal_curve(avg_seasoning['seasoning_month'], *popt_lognorm)
+                    )
+                }
+            except:
+                band_curves['lognormal'] = None
+            
+            # Fit Gompertz curve
+            try:
+                popt_gompertz, _ = curve_fit(
+                    gompertz_curve,
+                    avg_seasoning['seasoning_month'],
+                    avg_seasoning['charge_off_rate'],
+                    p0=[0.05, 1, 0.1],
+                    bounds=([0, 0, 0], [0.3, 10, 1])
+                )
+                band_curves['gompertz'] = {
+                    'function': gompertz_curve,
+                    'params': popt_gompertz,
+                    'r_squared': self._calculate_r_squared(
+                        avg_seasoning['charge_off_rate'],
+                        gompertz_curve(avg_seasoning['seasoning_month'], *popt_gompertz)
+                    )
+                }
+            except:
+                band_curves['gompertz'] = None
+            
+            curves[fico_band] = band_curves
+        
+        # Also fit aggregate curves
+        aggregate_data = self.calculate_aggregate_vintage_metrics()
+        aggregate_curve_data = aggregate_data[
+            aggregate_data['seasoning_month'] <= max_seasoning
+        ]
+        avg_aggregate_seasoning = aggregate_curve_data.groupby('seasoning_month')['charge_off_rate'].mean().reset_index()
+        
+        aggregate_curves = {}
+        
+        # Fit aggregate Weibull curve
         try:
             popt_weibull, _ = curve_fit(
                 weibull_curve, 
-                avg_seasoning['seasoning_month'], 
-                avg_seasoning['charge_off_rate'],
-                p0=[0.05, 24, 2],  # Initial guesses
-                bounds=([0, 1, 0.1], [0.2, 60, 10])
+                avg_aggregate_seasoning['seasoning_month'], 
+                avg_aggregate_seasoning['charge_off_rate'],
+                p0=[0.05, 24, 2],
+                bounds=([0, 1, 0.1], [0.3, 60, 10])
             )
-            curves['weibull'] = {
+            aggregate_curves['weibull'] = {
                 'function': weibull_curve,
                 'params': popt_weibull,
                 'r_squared': self._calculate_r_squared(
-                    avg_seasoning['charge_off_rate'],
-                    weibull_curve(avg_seasoning['seasoning_month'], *popt_weibull)
+                    avg_aggregate_seasoning['charge_off_rate'],
+                    weibull_curve(avg_aggregate_seasoning['seasoning_month'], *popt_weibull)
                 )
             }
         except:
-            curves['weibull'] = None
+            aggregate_curves['weibull'] = None
         
-        # Fit Lognormal curve
-        try:
-            popt_lognorm, _ = curve_fit(
-                lognormal_curve,
-                avg_seasoning['seasoning_month'],
-                avg_seasoning['charge_off_rate'],
-                p0=[0.05, 3, 0.5],
-                bounds=([0, 1, 0.1], [0.2, 5, 2])
-            )
-            curves['lognormal'] = {
-                'function': lognormal_curve,
-                'params': popt_lognorm,
-                'r_squared': self._calculate_r_squared(
-                    avg_seasoning['charge_off_rate'],
-                    lognormal_curve(avg_seasoning['seasoning_month'], *popt_lognorm)
-                )
-            }
-        except:
-            curves['lognormal'] = None
-        
-        # Fit Gompertz curve
-        try:
-            popt_gompertz, _ = curve_fit(
-                gompertz_curve,
-                avg_seasoning['seasoning_month'],
-                avg_seasoning['charge_off_rate'],
-                p0=[0.05, 1, 0.1],
-                bounds=([0, 0, 0], [0.2, 10, 1])
-            )
-            curves['gompertz'] = {
-                'function': gompertz_curve,
-                'params': popt_gompertz,
-                'r_squared': self._calculate_r_squared(
-                    avg_seasoning['charge_off_rate'],
-                    gompertz_curve(avg_seasoning['seasoning_month'], *popt_gompertz)
-                )
-            }
-        except:
-            curves['gompertz'] = None
+        curves['aggregate'] = aggregate_curves
         
         self.seasoning_curves = curves
         return curves
@@ -169,10 +248,10 @@ class VintageAnalyzer:
     
     def analyze_vintage_quality(self) -> pd.DataFrame:
         """
-        Analyze vintage quality based on early performance indicators.
+        Analyze vintage quality based on early performance indicators by FICO band.
         
         Returns:
-            DataFrame with vintage quality metrics
+            DataFrame with vintage quality metrics by FICO band
         """
         if self.vintage_summary is None:
             self.calculate_vintage_metrics()
@@ -182,35 +261,104 @@ class VintageAnalyzer:
         vintage_quality = []
         
         for vintage in self.vintage_summary['vintage_date'].unique():
-            vintage_data = self.vintage_summary[
-                self.vintage_summary['vintage_date'] == vintage
-            ]
-            
-            quality_metrics = {'vintage_date': vintage}
-            
-            for period in early_periods:
-                period_data = vintage_data[vintage_data['seasoning_month'] == period]
-                if not period_data.empty:
-                    quality_metrics[f'charge_off_rate_{period}m'] = period_data['charge_off_rate'].iloc[0]
-                    quality_metrics[f'cumulative_charge_off_{period}m'] = period_data['cumulative_charge_off_rate'].iloc[0]
-                else:
-                    quality_metrics[f'charge_off_rate_{period}m'] = np.nan
-                    quality_metrics[f'cumulative_charge_off_{period}m'] = np.nan
-            
-            # Calculate vintage characteristics
-            vintage_loans = self.data[self.data['vintage_date'] == vintage]
-            quality_metrics['total_loans'] = vintage_loans['loan_id'].nunique()
-            quality_metrics['avg_loan_size'] = vintage_loans['loan_amount'].mean()
-            quality_metrics['avg_interest_rate'] = vintage_loans['interest_rate'].mean()
-            quality_metrics['avg_term'] = vintage_loans['term'].mean()
-            
-            vintage_quality.append(quality_metrics)
+            for fico_band in self.fico_bands:
+                vintage_data = self.vintage_summary[
+                    (self.vintage_summary['vintage_date'] == vintage) &
+                    (self.vintage_summary['fico_band'] == fico_band)
+                ]
+                
+                if vintage_data.empty:
+                    continue
+                
+                quality_metrics = {
+                    'vintage_date': vintage,
+                    'fico_band': fico_band
+                }
+                
+                # Add risk grade if available
+                if 'risk_grade' in vintage_data.columns:
+                    quality_metrics['risk_grade'] = vintage_data['risk_grade'].iloc[0]
+                
+                for period in early_periods:
+                    period_data = vintage_data[vintage_data['seasoning_month'] == period]
+                    if not period_data.empty:
+                        quality_metrics[f'charge_off_rate_{period}m'] = period_data['charge_off_rate'].iloc[0]
+                        quality_metrics[f'cumulative_charge_off_{period}m'] = period_data['cumulative_charge_off_rate'].iloc[0]
+                    else:
+                        quality_metrics[f'charge_off_rate_{period}m'] = np.nan
+                        quality_metrics[f'cumulative_charge_off_{period}m'] = np.nan
+                
+                # Calculate vintage characteristics
+                vintage_loans = self.data[
+                    (self.data['vintage_date'] == vintage) &
+                    (self.data['fico_band'] == fico_band)
+                ]
+                quality_metrics['total_loans'] = vintage_loans['loan_id'].nunique()
+                quality_metrics['avg_loan_size'] = vintage_loans['loan_amount'].mean()
+                quality_metrics['avg_interest_rate'] = vintage_loans['interest_rate'].mean()
+                quality_metrics['avg_term'] = vintage_loans['term'].mean()
+                quality_metrics['avg_fico_score'] = vintage_loans['fico_score'].mean()
+                
+                vintage_quality.append(quality_metrics)
         
         return pd.DataFrame(vintage_quality)
     
+    def analyze_fico_mix_trends(self) -> Dict:
+        """
+        Analyze trends in FICO band mix over time.
+        
+        Returns:
+            Dictionary with FICO mix analysis
+        """
+        # Get FICO mix by vintage
+        fico_mix = self.data.groupby(['vintage_date', 'fico_band', 'loan_id']).first().reset_index()
+        vintage_mix = fico_mix.groupby(['vintage_date', 'fico_band']).agg({
+            'loan_amount': 'sum',
+            'loan_id': 'count'
+        }).reset_index()
+        
+        # Calculate percentages
+        vintage_totals = vintage_mix.groupby('vintage_date').agg({
+            'loan_amount': 'sum',
+            'loan_id': 'sum'
+        }).reset_index()
+        
+        vintage_mix = vintage_mix.merge(
+            vintage_totals,
+            on='vintage_date',
+            suffixes=('', '_total')
+        )
+        
+        vintage_mix['amount_pct'] = vintage_mix['loan_amount'] / vintage_mix['loan_amount_total']
+        vintage_mix['count_pct'] = vintage_mix['loan_id'] / vintage_mix['loan_id_total']
+        
+        # Add risk grade
+        if 'risk_grade' in self.data.columns:
+            risk_grade_map = self.data.groupby('fico_band')['risk_grade'].first().to_dict()
+            vintage_mix['risk_grade'] = vintage_mix['fico_band'].map(risk_grade_map)
+        
+        # Analyze trends
+        trends = {}
+        
+        # Overall portfolio quality trend
+        if 'risk_grade' in vintage_mix.columns:
+            portfolio_quality = vintage_mix.groupby('vintage_date').apply(
+                lambda x: np.average(x['risk_grade'], weights=x['loan_amount'])
+            ).reset_index()
+            portfolio_quality.columns = ['vintage_date', 'weighted_avg_risk_grade']
+            trends['portfolio_quality'] = portfolio_quality
+        
+        # FICO band trends
+        for fico_band in self.fico_bands:
+            band_trend = vintage_mix[vintage_mix['fico_band'] == fico_band].copy()
+            if not band_trend.empty:
+                trends[f'fico_band_{fico_band}'] = band_trend
+        
+        return trends
+    
     def identify_vintage_patterns(self) -> Dict:
         """
-        Identify patterns in vintage performance.
+        Identify patterns in vintage performance by FICO band.
         
         Returns:
             Dictionary with vintage pattern analysis
@@ -220,44 +368,51 @@ class VintageAnalyzer:
         
         patterns = {}
         
-        # Seasonal patterns
+        # Seasonal patterns by FICO band
         vintage_quality = self.analyze_vintage_quality()
         vintage_quality['vintage_month'] = vintage_quality['vintage_date'].dt.month
         vintage_quality['vintage_year'] = vintage_quality['vintage_date'].dt.year
         
-        # Monthly seasonality
-        monthly_performance = vintage_quality.groupby('vintage_month')[
-            'charge_off_rate_12m'
-        ].mean()
+        # Monthly seasonality by FICO band
+        for fico_band in self.fico_bands:
+            band_data = vintage_quality[vintage_quality['fico_band'] == fico_band]
+            if not band_data.empty:
+                monthly_performance = band_data.groupby('vintage_month')[
+                    'charge_off_rate_12m'
+                ].mean()
+                patterns[f'monthly_seasonality_{fico_band}'] = monthly_performance.to_dict()
         
-        patterns['monthly_seasonality'] = monthly_performance.to_dict()
+        # Yearly trends by FICO band
+        for fico_band in self.fico_bands:
+            band_data = vintage_quality[vintage_quality['fico_band'] == fico_band]
+            if not band_data.empty:
+                yearly_performance = band_data.groupby('vintage_year')[
+                    'charge_off_rate_12m'
+                ].mean()
+                patterns[f'yearly_trends_{fico_band}'] = yearly_performance.to_dict()
         
-        # Yearly trends
-        yearly_performance = vintage_quality.groupby('vintage_year')[
-            'charge_off_rate_12m'
-        ].mean()
-        
-        patterns['yearly_trends'] = yearly_performance.to_dict()
-        
-        # Vintage quality ranking
-        vintage_quality['quality_score'] = (
-            vintage_quality['charge_off_rate_12m'].rank(ascending=True) +
-            vintage_quality['charge_off_rate_18m'].rank(ascending=True)
-        ) / 2
-        
-        patterns['best_vintages'] = vintage_quality.nsmallest(5, 'quality_score')[
-            ['vintage_date', 'quality_score', 'charge_off_rate_12m', 'charge_off_rate_18m']
-        ].to_dict('records')
-        
-        patterns['worst_vintages'] = vintage_quality.nlargest(5, 'quality_score')[
-            ['vintage_date', 'quality_score', 'charge_off_rate_12m', 'charge_off_rate_18m']
-        ].to_dict('records')
+        # Vintage quality ranking by FICO band
+        for fico_band in self.fico_bands:
+            band_data = vintage_quality[vintage_quality['fico_band'] == fico_band].copy()
+            if not band_data.empty:
+                band_data['quality_score'] = (
+                    band_data['charge_off_rate_12m'].rank(ascending=True) +
+                    band_data['charge_off_rate_18m'].rank(ascending=True)
+                ) / 2
+                
+                patterns[f'best_vintages_{fico_band}'] = band_data.nsmallest(3, 'quality_score')[
+                    ['vintage_date', 'quality_score', 'charge_off_rate_12m', 'charge_off_rate_18m']
+                ].to_dict('records')
+                
+                patterns[f'worst_vintages_{fico_band}'] = band_data.nlargest(3, 'quality_score')[
+                    ['vintage_date', 'quality_score', 'charge_off_rate_12m', 'charge_off_rate_18m']
+                ].to_dict('records')
         
         return patterns
     
     def plot_vintage_analysis(self, save_path: Optional[str] = None):
         """
-        Create comprehensive vintage analysis plots.
+        Create comprehensive vintage analysis plots with FICO segmentation.
         
         Args:
             save_path: Optional path to save the plots
@@ -265,11 +420,12 @@ class VintageAnalyzer:
         if self.vintage_summary is None:
             self.calculate_vintage_metrics()
         
-        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-        fig.suptitle('Vintage Analysis Dashboard', fontsize=16, fontweight='bold')
+        fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+        fig.suptitle('Vintage Analysis Dashboard - FICO Segmentation', fontsize=16, fontweight='bold')
         
-        # 1. Vintage performance heatmap
-        pivot_data = self.vintage_summary.pivot_table(
+        # 1. Vintage performance heatmap (aggregate)
+        aggregate_metrics = self.calculate_aggregate_vintage_metrics()
+        pivot_data = aggregate_metrics.pivot_table(
             values='charge_off_rate',
             index='vintage_date',
             columns='seasoning_month',
@@ -277,56 +433,78 @@ class VintageAnalyzer:
         )
         
         sns.heatmap(pivot_data, ax=axes[0, 0], cmap='YlOrRd', cbar_kws={'label': 'Charge-off Rate'})
-        axes[0, 0].set_title('Vintage Performance Heatmap')
+        axes[0, 0].set_title('Aggregate Vintage Performance Heatmap')
         axes[0, 0].set_xlabel('Seasoning Month')
         axes[0, 0].set_ylabel('Vintage Date')
         
-        # 2. Average seasoning curve
-        avg_seasoning = self.vintage_summary.groupby('seasoning_month')['charge_off_rate'].mean()
-        axes[0, 1].plot(avg_seasoning.index, avg_seasoning.values, 'b-', linewidth=2, label='Average')
+        # 2. Average seasoning curves by FICO band
+        colors = ['red', 'orange', 'yellow', 'green', 'blue']
+        for i, fico_band in enumerate(self.fico_bands):
+            band_data = self.vintage_summary[self.vintage_summary['fico_band'] == fico_band]
+            avg_seasoning = band_data.groupby('seasoning_month')['charge_off_rate'].mean()
+            axes[0, 1].plot(avg_seasoning.index, avg_seasoning.values, 
+                           color=colors[i], linewidth=2, label=fico_band)
         
-        # Add fitted curves if available
-        if self.seasoning_curves:
-            x_range = np.arange(0, max(avg_seasoning.index) + 1)
-            for curve_name, curve_info in self.seasoning_curves.items():
-                if curve_info is not None:
-                    y_pred = curve_info['function'](x_range, *curve_info['params'])
-                    axes[0, 1].plot(x_range, y_pred, '--', alpha=0.7, 
-                                   label=f'{curve_name} (R²={curve_info["r_squared"]:.3f})')
-        
-        axes[0, 1].set_title('Average Seasoning Curve')
+        axes[0, 1].set_title('Average Seasoning Curves by FICO Band')
         axes[0, 1].set_xlabel('Seasoning Month')
         axes[0, 1].set_ylabel('Charge-off Rate')
         axes[0, 1].legend()
         axes[0, 1].grid(True, alpha=0.3)
         
-        # 3. Vintage quality comparison
+        # 3. FICO mix trends
+        fico_mix_trends = self.analyze_fico_mix_trends()
+        if 'portfolio_quality' in fico_mix_trends:
+            portfolio_quality = fico_mix_trends['portfolio_quality']
+            axes[0, 2].plot(portfolio_quality['vintage_date'], 
+                           portfolio_quality['weighted_avg_risk_grade'], 
+                           'b-', linewidth=2, marker='o')
+            axes[0, 2].set_title('Portfolio Quality Trend (Lower = Better)')
+            axes[0, 2].set_xlabel('Vintage Date')
+            axes[0, 2].set_ylabel('Weighted Avg Risk Grade')
+            axes[0, 2].tick_params(axis='x', rotation=45)
+            axes[0, 2].grid(True, alpha=0.3)
+        
+        # 4. Vintage quality comparison by FICO band
         vintage_quality = self.analyze_vintage_quality()
-        axes[1, 0].scatter(vintage_quality['vintage_date'], 
-                          vintage_quality['charge_off_rate_12m'], 
-                          alpha=0.7, s=50)
+        for i, fico_band in enumerate(self.fico_bands):
+            band_data = vintage_quality[vintage_quality['fico_band'] == fico_band]
+            if not band_data.empty:
+                axes[1, 0].scatter(band_data['vintage_date'], 
+                                  band_data['charge_off_rate_12m'], 
+                                  alpha=0.7, s=30, color=colors[i], label=fico_band)
+        
         axes[1, 0].set_title('Vintage Quality (12-Month Performance)')
         axes[1, 0].set_xlabel('Vintage Date')
         axes[1, 0].set_ylabel('12-Month Charge-off Rate')
         axes[1, 0].tick_params(axis='x', rotation=45)
+        axes[1, 0].legend()
         axes[1, 0].grid(True, alpha=0.3)
         
-        # 4. Cumulative charge-off rates
+        # 5. Cumulative charge-off rates by FICO band
         recent_vintages = self.vintage_summary[
             self.vintage_summary['vintage_date'] >= '2020-01-01'
         ]
         
-        for vintage in recent_vintages['vintage_date'].unique()[-5:]:  # Last 5 vintages
-            vintage_data = recent_vintages[recent_vintages['vintage_date'] == vintage]
-            axes[1, 1].plot(vintage_data['seasoning_month'], 
-                           vintage_data['cumulative_charge_off_rate'], 
-                           marker='o', label=vintage.strftime('%Y-%m'))
+        for i, fico_band in enumerate(self.fico_bands):
+            band_data = recent_vintages[recent_vintages['fico_band'] == fico_band]
+            if not band_data.empty:
+                # Plot last vintage for this band
+                last_vintage = band_data['vintage_date'].max()
+                vintage_data = band_data[band_data['vintage_date'] == last_vintage]
+                axes[1, 1].plot(vintage_data['seasoning_month'], 
+                               vintage_data['cumulative_charge_off_rate'], 
+                               color=colors[i], marker='o', label=f'{fico_band} ({last_vintage.strftime("%Y-%m")})')
         
         axes[1, 1].set_title('Cumulative Charge-off Rates (Recent Vintages)')
         axes[1, 1].set_xlabel('Seasoning Month')
         axes[1, 1].set_ylabel('Cumulative Charge-off Rate')
         axes[1, 1].legend()
         axes[1, 1].grid(True, alpha=0.3)
+        
+        # 6. FICO band distribution
+        fico_distribution = self.data.groupby('fico_band')['loan_amount'].sum()
+        axes[1, 2].pie(fico_distribution.values, labels=fico_distribution.index, autopct='%1.1f%%')
+        axes[1, 2].set_title('Portfolio Distribution by FICO Band')
         
         plt.tight_layout()
         
