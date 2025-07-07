@@ -697,4 +697,50 @@ class VintageAnalyzer:
         today = pd.Timestamp(datetime.today().date())
         cutoff = today - pd.DateOffset(years=focus_years)
         focus_vintages = self.vintage_summary['vintage_quarter'][pd.to_datetime(self.vintage_summary['vintage_quarter']) >= cutoff].unique()
-        return list(focus_vintages) 
+        return list(focus_vintages)
+
+    def plot_cumulative_chargeoff_heatmap(self, interval=6, max_month=96, forecast_overlay=None):
+        """
+        Plot a heatmap of cumulative gross charge-off % by vintage (y) and seasoning month (x, every interval up to max_month), overlaying forecasted values if provided.
+        Args:
+            forecast_overlay: Optional DataFrame (same shape as heatmap) with forecasted values for months beyond actuals.
+        """
+        if self.vintage_summary is None:
+            self.calculate_vintage_metrics()
+        pivot = self.vintage_summary[self.vintage_summary['seasoning_month'] <= max_month]
+        pivot = pivot[pivot['seasoning_month'] % interval == 0]
+        heatmap_data = pivot.pivot_table(index='vintage_date', columns='seasoning_month', values='cumulative_charge_off_flag', aggfunc='mean')
+        plt.figure(figsize=(14, max(6, len(heatmap_data)//4)))
+        sns.heatmap(heatmap_data, annot=True, fmt='.2%', cmap='YlOrRd', cbar_kws={'label': 'Cumulative Gross CO%'})
+        if forecast_overlay is not None:
+            sns.heatmap(forecast_overlay, annot=False, fmt='.2%', cmap='YlOrRd', alpha=0.3, cbar=False)
+        plt.title('Cumulative Gross Charge-off % Heatmap (Actuals + Forecasts)')
+        plt.ylabel('Vintage')
+        plt.xlabel('Seasoning Month')
+        plt.tight_layout()
+        plt.figtext(0.5, 0.01, 'Lighter cells indicate forecasted values', ha='center', fontsize=10)
+        plt.show()
+
+    def plot_cumulative_chargeoff_lines(self, max_month=96, forecast_dict=None):
+        """
+        Plot a line chart of cumulative gross charge-off % for each vintage (y=CO%, x=seasoning months), overlaying forecasted values if provided.
+        Args:
+            forecast_dict: Optional dict {vintage: (months, values)} for forecasted months/values.
+        """
+        if self.vintage_summary is None:
+            self.calculate_vintage_metrics()
+        plt.figure(figsize=(14, 7))
+        for vintage, group in self.vintage_summary.groupby('vintage_date'):
+            group = group[group['seasoning_month'] <= max_month]
+            last_actual_month = group['seasoning_month'].max()
+            plt.plot(group['seasoning_month'], group['cumulative_charge_off_flag'], label=f'{vintage} (Actual)', linestyle='solid')
+            if forecast_dict and vintage in forecast_dict:
+                months, values = forecast_dict[vintage]
+                plt.plot(months, values, label=f'{vintage} (Forecast)', linestyle='dashed')
+        plt.title('Cumulative Gross Charge-off % by Vintage (Actuals + Forecasts)')
+        plt.xlabel('Seasoning Month')
+        plt.ylabel('Cumulative Gross CO%')
+        plt.legend(title='Vintage', bbox_to_anchor=(1.05, 1), loc='upper left', ncol=1, fontsize='small')
+        plt.tight_layout()
+        plt.figtext(0.5, 0.01, 'Dashed lines indicate forecasted values', ha='center', fontsize=10)
+        plt.show() 
