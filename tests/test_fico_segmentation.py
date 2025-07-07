@@ -107,7 +107,7 @@ def test_fico_segmentation():
     # Verify forecast structure
     assert 'vintage_date' in forecast.columns, "Vintage date missing from forecast"
     assert 'seasoning_month' in forecast.columns, "Seasoning month missing from forecast"
-    assert 'charge_off_rate' in forecast.columns, "Charge-off rate missing from forecast"
+    assert 'charge_off_flag' in forecast.columns, "Charge-off flag missing from forecast"
     assert 'charge_off_amount' in forecast.columns, "Charge-off amount missing from forecast"
     
     print(f"   ✓ FICO-segmented forecast generated with {len(forecast)} periods")

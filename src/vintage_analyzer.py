@@ -82,10 +82,10 @@ class VintageAnalyzer:
         }).reset_index()
         
         # Calculate charge-off rates
-        vintage_metrics['charge_off_rate'] = (
+        vintage_metrics['charge_off_flag'] = (
             vintage_metrics['charge_off_amount'] / vintage_metrics['outstanding_balance']
         )
-        vintage_metrics['cumulative_charge_off_rate'] = (
+        vintage_metrics['cumulative_charge_off_flag'] = (
             vintage_metrics.groupby(['vintage_date', 'fico_band'])['charge_off_amount'].cumsum() /
             vintage_metrics.groupby(['vintage_date', 'fico_band'])['loan_amount'].first()
         )
@@ -122,10 +122,10 @@ class VintageAnalyzer:
         }).reset_index()
         
         # Calculate dollar-weighted charge-off rates
-        aggregate_metrics['charge_off_rate'] = (
+        aggregate_metrics['charge_off_flag'] = (
             aggregate_metrics['charge_off_amount'] / aggregate_metrics['outstanding_balance']
         )
-        aggregate_metrics['cumulative_charge_off_rate'] = (
+        aggregate_metrics['cumulative_charge_off_flag'] = (
             aggregate_metrics.groupby('vintage_date')['charge_off_amount'].cumsum() /
             aggregate_metrics.groupby('vintage_date')['loan_amount'].first()
         )
@@ -172,7 +172,7 @@ class VintageAnalyzer:
         # Fit curves for each FICO band
         for fico_band in self.fico_bands:
             band_data = curve_data[curve_data['fico_band'] == fico_band]
-            avg_seasoning = band_data.groupby('seasoning_month')['charge_off_rate'].mean().reset_index()
+            avg_seasoning = band_data.groupby('seasoning_month')['charge_off_flag'].mean().reset_index()
             
             if len(avg_seasoning) < 10:  # Need sufficient data points
                 continue
@@ -184,7 +184,7 @@ class VintageAnalyzer:
                 popt_weibull, _ = curve_fit(
                     weibull_curve, 
                     avg_seasoning['seasoning_month'], 
-                    avg_seasoning['charge_off_rate'],
+                    avg_seasoning['charge_off_flag'],
                     p0=[0.05, 24, 2],
                     bounds=([0, 1, 0.1], [0.3, 60, 10])
                 )
@@ -192,7 +192,7 @@ class VintageAnalyzer:
                     'function': weibull_curve,
                     'params': popt_weibull,
                     'r_squared': self._calculate_r_squared(
-                        avg_seasoning['charge_off_rate'],
+                        avg_seasoning['charge_off_flag'],
                         weibull_curve(avg_seasoning['seasoning_month'], *popt_weibull)
                     )
                 }
@@ -204,7 +204,7 @@ class VintageAnalyzer:
                 popt_lognorm, _ = curve_fit(
                     lognormal_curve,
                     avg_seasoning['seasoning_month'],
-                    avg_seasoning['charge_off_rate'],
+                    avg_seasoning['charge_off_flag'],
                     p0=[0.05, 3, 0.5],
                     bounds=([0, 1, 0.1], [0.3, 5, 2])
                 )
@@ -212,7 +212,7 @@ class VintageAnalyzer:
                     'function': lognormal_curve,
                     'params': popt_lognorm,
                     'r_squared': self._calculate_r_squared(
-                        avg_seasoning['charge_off_rate'],
+                        avg_seasoning['charge_off_flag'],
                         lognormal_curve(avg_seasoning['seasoning_month'], *popt_lognorm)
                     )
                 }
@@ -224,7 +224,7 @@ class VintageAnalyzer:
                 popt_gompertz, _ = curve_fit(
                     gompertz_curve,
                     avg_seasoning['seasoning_month'],
-                    avg_seasoning['charge_off_rate'],
+                    avg_seasoning['charge_off_flag'],
                     p0=[0.05, 1, 0.1],
                     bounds=([0, 0, 0], [0.3, 10, 1])
                 )
@@ -232,7 +232,7 @@ class VintageAnalyzer:
                     'function': gompertz_curve,
                     'params': popt_gompertz,
                     'r_squared': self._calculate_r_squared(
-                        avg_seasoning['charge_off_rate'],
+                        avg_seasoning['charge_off_flag'],
                         gompertz_curve(avg_seasoning['seasoning_month'], *popt_gompertz)
                     )
                 }
@@ -246,7 +246,7 @@ class VintageAnalyzer:
         aggregate_curve_data = aggregate_data[
             aggregate_data['seasoning_month'] <= max_seasoning
         ]
-        avg_aggregate_seasoning = aggregate_curve_data.groupby('seasoning_month')['charge_off_rate'].mean().reset_index()
+        avg_aggregate_seasoning = aggregate_curve_data.groupby('seasoning_month')['charge_off_flag'].mean().reset_index()
         
         aggregate_curves = {}
         
@@ -255,7 +255,7 @@ class VintageAnalyzer:
             popt_weibull, _ = curve_fit(
                 weibull_curve, 
                 avg_aggregate_seasoning['seasoning_month'], 
-                avg_aggregate_seasoning['charge_off_rate'],
+                avg_aggregate_seasoning['charge_off_flag'],
                 p0=[0.05, 24, 2],
                 bounds=([0, 1, 0.1], [0.3, 60, 10])
             )
@@ -263,7 +263,7 @@ class VintageAnalyzer:
                 'function': weibull_curve,
                 'params': popt_weibull,
                 'r_squared': self._calculate_r_squared(
-                    avg_aggregate_seasoning['charge_off_rate'],
+                    avg_aggregate_seasoning['charge_off_flag'],
                     weibull_curve(avg_aggregate_seasoning['seasoning_month'], *popt_weibull)
                 )
             }
@@ -317,10 +317,10 @@ class VintageAnalyzer:
                 for period in early_periods:
                     period_data = vintage_data[vintage_data['seasoning_month'] == period]
                     if not period_data.empty:
-                        quality_metrics[f'charge_off_rate_{period}m'] = period_data['charge_off_rate'].iloc[0]
-                        quality_metrics[f'cumulative_charge_off_{period}m'] = period_data['cumulative_charge_off_rate'].iloc[0]
+                        quality_metrics[f'charge_off_flag_{period}m'] = period_data['charge_off_flag'].iloc[0]
+                        quality_metrics[f'cumulative_charge_off_{period}m'] = period_data['cumulative_charge_off_flag'].iloc[0]
                     else:
-                        quality_metrics[f'charge_off_rate_{period}m'] = np.nan
+                        quality_metrics[f'charge_off_flag_{period}m'] = np.nan
                         quality_metrics[f'cumulative_charge_off_{period}m'] = np.nan
                 
                 # Calculate vintage characteristics
@@ -413,7 +413,7 @@ class VintageAnalyzer:
             band_data = vintage_quality[vintage_quality['fico_band'] == fico_band]
             if not band_data.empty:
                 monthly_performance = band_data.groupby('vintage_month')[
-                    'charge_off_rate_12m'
+                    'charge_off_flag_12m'
                 ].mean()
                 patterns[f'monthly_seasonality_{fico_band}'] = monthly_performance.to_dict()
         
@@ -422,7 +422,7 @@ class VintageAnalyzer:
             band_data = vintage_quality[vintage_quality['fico_band'] == fico_band]
             if not band_data.empty:
                 yearly_performance = band_data.groupby('vintage_year')[
-                    'charge_off_rate_12m'
+                    'charge_off_flag_12m'
                 ].mean()
                 patterns[f'yearly_trends_{fico_band}'] = yearly_performance.to_dict()
         
@@ -431,16 +431,16 @@ class VintageAnalyzer:
             band_data = vintage_quality[vintage_quality['fico_band'] == fico_band].copy()
             if not band_data.empty:
                 band_data['quality_score'] = (
-                    band_data['charge_off_rate_12m'].rank(ascending=True) +
-                    band_data['charge_off_rate_18m'].rank(ascending=True)
+                    band_data['charge_off_flag_12m'].rank(ascending=True) +
+                    band_data['charge_off_flag_18m'].rank(ascending=True)
                 ) / 2
                 
                 patterns[f'best_vintages_{fico_band}'] = band_data.nsmallest(3, 'quality_score')[
-                    ['vintage_date', 'quality_score', 'charge_off_rate_12m', 'charge_off_rate_18m']
+                    ['vintage_date', 'quality_score', 'charge_off_flag_12m', 'charge_off_flag_18m']
                 ].to_dict('records')
                 
                 patterns[f'worst_vintages_{fico_band}'] = band_data.nlargest(3, 'quality_score')[
-                    ['vintage_date', 'quality_score', 'charge_off_rate_12m', 'charge_off_rate_18m']
+                    ['vintage_date', 'quality_score', 'charge_off_flag_12m', 'charge_off_flag_18m']
                 ].to_dict('records')
         
         return patterns
@@ -461,7 +461,7 @@ class VintageAnalyzer:
         # 1. Vintage performance heatmap (aggregate)
         aggregate_metrics = self.calculate_aggregate_vintage_metrics()
         pivot_data = aggregate_metrics.pivot_table(
-            values='charge_off_rate',
+            values='charge_off_flag',
             index='vintage_date',
             columns='seasoning_month',
             aggfunc='mean'
@@ -476,7 +476,7 @@ class VintageAnalyzer:
         colors = ['red', 'orange', 'yellow', 'green', 'blue']
         for i, fico_band in enumerate(self.fico_bands):
             band_data = self.vintage_summary[self.vintage_summary['fico_band'] == fico_band]
-            avg_seasoning = band_data.groupby('seasoning_month')['charge_off_rate'].mean()
+            avg_seasoning = band_data.groupby('seasoning_month')['charge_off_flag'].mean()
             axes[0, 1].plot(avg_seasoning.index, avg_seasoning.values, 
                            color=colors[i], linewidth=2, label=fico_band)
         
@@ -505,7 +505,7 @@ class VintageAnalyzer:
             band_data = vintage_quality[vintage_quality['fico_band'] == fico_band]
             if not band_data.empty:
                 axes[1, 0].scatter(band_data['vintage_date'], 
-                                  band_data['charge_off_rate_12m'], 
+                                  band_data['charge_off_flag_12m'], 
                                   alpha=0.7, s=30, color=colors[i], label=fico_band)
         
         axes[1, 0].set_title('Vintage Quality (12-Month Performance)')
@@ -527,7 +527,7 @@ class VintageAnalyzer:
                 last_vintage = band_data['vintage_date'].max()
                 vintage_data = band_data[band_data['vintage_date'] == last_vintage]
                 axes[1, 1].plot(vintage_data['seasoning_month'], 
-                               vintage_data['cumulative_charge_off_rate'], 
+                               vintage_data['cumulative_charge_off_flag'], 
                                color=colors[i], marker='o', label=f'{fico_band} ({last_vintage.strftime("%Y-%m")})')
         
         axes[1, 1].set_title('Cumulative Charge-off Rates (Recent Vintages)')
@@ -600,22 +600,22 @@ class VintageAnalyzer:
         
         # Calculate cumulative charge-off rates by seasoning
         cumulative_co = data.groupby('seasoning_month').agg({
-            'charge_off_rate': 'sum',
+            'charge_off_flag': 'sum',
             'loan_id': 'nunique'
         }).reset_index()
-        cumulative_co['cumulative_charge_off_rate'] = (
-            cumulative_co['charge_off_rate'].cumsum() / cumulative_co['loan_id'].iloc[0]
+        cumulative_co['cumulative_charge_off_flag'] = (
+            cumulative_co['charge_off_flag'].cumsum() / cumulative_co['loan_id'].iloc[0]
         )
         
         patterns['cumulative_charge_off_curve'] = cumulative_co
         
         # Calculate charge-off timing distribution
-        charge_off_timing = data[data['charge_off_rate'] == 1].groupby('seasoning_month').size()
+        charge_off_timing = data[data['charge_off_flag'] == 1].groupby('seasoning_month').size()
         patterns['charge_off_timing_distribution'] = charge_off_timing.to_dict()
         
         # Calculate average seasoning at charge-off
-        if not data[data['charge_off_rate'] == 1].empty:
-            avg_seasoning_at_co = data[data['charge_off_rate'] == 1]['seasoning_month'].mean()
+        if not data[data['charge_off_flag'] == 1].empty:
+            avg_seasoning_at_co = data[data['charge_off_flag'] == 1]['seasoning_month'].mean()
             patterns['average_seasoning_at_charge_off'] = avg_seasoning_at_co
         else:
             patterns['average_seasoning_at_charge_off'] = None

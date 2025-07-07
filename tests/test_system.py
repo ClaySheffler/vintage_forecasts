@@ -28,7 +28,7 @@ def test_data_loader():
         
         # Check data structure
         required_columns = ['loan_id', 'vintage_date', 'report_date', 'seasoning_month', 
-                           'loan_amount', 'charge_off_rate', 'charge_off_amount']
+                           'loan_amount', 'charge_off_flag', 'charge_off_amount']
         
         missing_columns = [col for col in required_columns if col not in loan_data.columns]
         if missing_columns:

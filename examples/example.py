@@ -25,7 +25,7 @@ def main():
     summary = data_loader.get_data_summary()
     print(f"   Loaded {summary['total_records']:,} records across {len(summary['fico_bands'])} FICO bands")
     print(f"   Average FICO: {summary['avg_fico_score']:.0f}")
-    print(f"   Average charge-off rate: {summary['avg_charge_off_rate']:.2%}")
+    print(f"   Average charge-off flag: {summary['avg_charge_off_flag']:.2%}")
     
     # 2. Perform vintage analysis by FICO band
     print("\n2. Analyzing vintage performance by FICO band...")
@@ -181,7 +181,7 @@ def main():
     sample_loan = incomplete_data['loan_id'].iloc[0]
     loan_data = incomplete_data[incomplete_data['loan_id'] == sample_loan]
     print(f"   Sample loan {sample_loan}: {len(loan_data)} seasoning months")
-    print(f"   Charge-off month: {loan_data[loan_data['charge_off_rate'] == 1]['seasoning_month'].iloc[0] if not loan_data[loan_data['charge_off_rate'] == 1].empty else 'None'}")
+    print(f"   Charge-off month: {loan_data[loan_data['charge_off_flag'] == 1]['seasoning_month'].iloc[0] if not loan_data[loan_data['charge_off_flag'] == 1].empty else 'None'}")
     
     # Load and preprocess (automatically completes data)
     data_loader.data = incomplete_data

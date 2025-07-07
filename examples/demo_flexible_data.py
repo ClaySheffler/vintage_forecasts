@@ -49,7 +49,7 @@ def demonstrate_flexible_data_handling():
     # Sample loan analysis
     sample_loan = incomplete_data['loan_id'].iloc[0]
     sample_loan_data = incomplete_data[incomplete_data['loan_id'] == sample_loan]
-    charge_off_month = sample_loan_data[sample_loan_data['charge_off_rate'] == 1]['seasoning_month']
+    charge_off_month = sample_loan_data[sample_loan_data['charge_off_flag'] == 1]['seasoning_month']
     
     print(f"   Sample loan {sample_loan}:")
     print(f"     - Seasoning months: {len(sample_loan_data)}")
@@ -66,7 +66,7 @@ def demonstrate_flexible_data_handling():
     completed_sample_data = completed_data[completed_data['loan_id'] == sample_loan]
     print(f"   Same loan after completion:")
     print(f"     - Seasoning months: {len(completed_sample_data)}")
-    print(f"     - Charge-off months: {list(completed_sample_data[completed_sample_data['charge_off_rate'] == 1]['seasoning_month'])}")
+    print(f"     - Charge-off months: {list(completed_sample_data[completed_sample_data['charge_off_flag'] == 1]['seasoning_month'])}")
     
     # Scenario 2: Complete Vintage Data (traditional approach)
     print("\n2. COMPLETE VINTAGE DATA SCENARIO")

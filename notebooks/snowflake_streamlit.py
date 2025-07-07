@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from src.vintage_analyzer import VintageAnalyzer
 from src.forecaster import ChargeOffForecaster
-import snowflake.connector
+from snowflake.snowpark.context import get_active_session
 
 st.set_page_config(page_title="Vintage Forecasts: Snowflake Streamlit Demo", layout="wide")
 st.title("Vintage Charge-off Forecasting: Snowflake Streamlit Demo")
@@ -23,7 +23,7 @@ st.header("1. Connect to Snowflake and Load Data")
 st.markdown("""
 **Template Query:**
 Edit this query to match your own database. The query should return a table with at least the following columns:
-- `loan_id`, `vintage_date`, `seasoning_month`, `fico_score`, `loan_amount`, `charge_off_rate`, `charge_off_amount`, `outstanding_balance`, `term`
+- `loan_id`, `vintage_date`, `seasoning_month`, `fico_score`, `loan_amount`, `charge_off_flag`, `charge_off_amount`, `outstanding_balance`, `term`
 
 You may add or map additional columns as needed.
 """)
@@ -36,7 +36,7 @@ SELECT
     seasoning_month,
     fico_score,
     loan_amount,
-    charge_off_rate,
+    charge_off_flag,
     charge_off_amount,
     outstanding_balance,
     term
@@ -46,33 +46,18 @@ WHERE vintage_date >= '2018-01-01'
 
 query = st.text_area("Edit your SQL query here:", value=def_template_query(), height=200)
 
-with st.expander("Snowflake Connection Settings"):
-    sf_account = st.text_input("Snowflake Account (e.g. xy12345.us-east-1)")
-    sf_user = st.text_input("Username")
-    sf_password = st.text_input("Password", type="password")
-    sf_warehouse = st.text_input("Warehouse")
-    sf_database = st.text_input("Database")
-    sf_schema = st.text_input("Schema")
-    connect_btn = st.button("Connect and Load Data")
+connect_btn = st.button("Load Data from Active Snowpark Session")
 
 @st.cache_data(show_spinner=True)
-def load_data_from_snowflake(query, account, user, password, warehouse, database, schema):
-    ctx = snowflake.connector.connect(
-        account=account,
-        user=user,
-        password=password,
-        warehouse=warehouse,
-        database=database,
-        schema=schema
-    )
-    df = pd.read_sql(query, ctx)
-    ctx.close()
+def load_data_from_snowflake(query):
+    session = get_active_session()
+    df = session.sql(query).to_pandas()
     return df
 
 if connect_btn:
     with st.spinner("Loading data from Snowflake..."):
         try:
-            df = load_data_from_snowflake(query, sf_account, sf_user, sf_password, sf_warehouse, sf_database, sf_schema)
+            df = load_data_from_snowflake(query)
             st.success(f"Loaded {len(df):,} records.")
             st.dataframe(df.head(100))
         except Exception as e:

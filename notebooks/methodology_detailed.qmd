@@ -26,7 +26,7 @@ This document provides a rigorous, transparent, and reproducible explanation of 
 ## 1.1. Data Structure
 
 - **Panel data**: Each row = loan, vintage, seasoning month.
-- **Key fields**: `loan_id`, `vintage_date`, `seasoning_month`, `charge_off_rate`, `charge_off_amount`, `outstanding_balance`, `term`, `fico_band`.
+- **Key fields**: `loan_id`, `vintage_date`, `seasoning_month`, `charge_off_flag`, `charge_off_amount`, `outstanding_balance`, `term`, `fico_band`.
 
 ## 1.2. Data Cleaning and Validation
 

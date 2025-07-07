@@ -176,7 +176,7 @@ class LoanDataLoader:
                                 # Calculate outstanding balance
                                 remaining_balance = loan_amount * (1 - seasoning_month / term)
                                 
-                                # Calculate charge-off rate based on vintage, seasoning, and FICO
+                                # Calculate charge-off flag based on vintage, seasoning, and FICO
                                 base_rate = self._get_base_charge_off_rate(risk_grade)
                                 
                                 # Vintage effect (some vintages perform better/worse)
@@ -197,9 +197,9 @@ class LoanDataLoader:
                                 # Random variation
                                 random_effect = np.random.normal(1, 0.1)
                                 
-                                charge_off_rate = (base_rate * vintage_effect * seasoning_effect * 
+                                charge_off_flag = (base_rate * vintage_effect * seasoning_effect * 
                                                  fico_effect * crisis_effect * random_effect)
-                                charge_off_rate = max(0, min(0.25, charge_off_rate))  # Cap at 25%
+                                charge_off_flag = max(0, min(0.25, charge_off_flag))  # Cap at 25%
                                 
                                 data_rows.append({
                                     'loan_id': loan_id,
@@ -213,8 +213,8 @@ class LoanDataLoader:
                                     'interest_rate': interest_rate,
                                     'term': term,
                                     'outstanding_balance': remaining_balance,
-                                    'charge_off_rate': charge_off_rate,
-                                    'charge_off_amount': remaining_balance * charge_off_rate
+                                    'charge_off_flag': charge_off_flag,
+                                    'charge_off_amount': remaining_balance * charge_off_flag
                                 })
         
         self.data = pd.DataFrame(data_rows)
@@ -252,7 +252,7 @@ class LoanDataLoader:
         - seasoning_month (int): Months since origination (0, 1, 2, ...)
         - fico_score (int): FICO score at origination (300-850)
         - loan_amount (float): Original loan amount
-        - charge_off_rate (int): Binary charge-off flag (0 = no charge-off, 1 = charged off)
+        - charge_off_flag (int): Binary charge-off flag (0 = no charge-off, 1 = charged off)
         - charge_off_amount (float): Amount charged off (0 if no charge-off, typically 70-90% of original principal if defaulted)
         
         Optional Columns:
@@ -263,7 +263,7 @@ class LoanDataLoader:
         - risk_grade (int): Risk grade 1-5 (auto-assigned if missing)
         
         Example CSV format:
-        loan_id,vintage_date,report_date,seasoning_month,fico_score,loan_amount,charge_off_rate,charge_off_amount,outstanding_balance
+        loan_id,vintage_date,report_date,seasoning_month,fico_score,loan_amount,charge_off_flag,charge_off_amount,outstanding_balance
         LOAN_001,2014-01-15,2014-02-15,1,650,25000.00,0,0.00,24875.00
         LOAN_001,2014-01-15,2014-03-15,2,650,25000.00,0,0.00,24800.37
         LOAN_001,2014-01-15,2014-04-15,3,650,25000.00,1,17500.00,0.00
@@ -292,7 +292,7 @@ class LoanDataLoader:
         # Validate required columns
         required_columns = [
             'loan_id', 'vintage_date', 'report_date', 'seasoning_month',
-            'fico_score', 'loan_amount', 'charge_off_rate', 'charge_off_amount'
+            'fico_score', 'loan_amount', 'charge_off_flag', 'charge_off_amount'
         ]
         
         missing_columns = [col for col in required_columns if col not in self.data.columns]
@@ -331,7 +331,7 @@ class LoanDataLoader:
             'seasoning_month': int,
             'fico_score': int,
             'loan_amount': float,
-            'charge_off_rate': int,
+            'charge_off_flag': int,
             'charge_off_amount': float
         }
         
@@ -356,14 +356,14 @@ class LoanDataLoader:
                 raise ValueError(f"Invalid FICO scores found: {invalid_fico['fico_score'].unique()}\n"
                                f"FICO scores must be between 300 and 850")
         
-        # Validate charge-off rates (binary flags)
-        if 'charge_off_rate' in self.data.columns:
-            invalid_rates = self.data[
-                ~self.data['charge_off_rate'].isin([0, 1])
+        # Validate charge-off flags (binary flags)
+        if 'charge_off_flag' in self.data.columns:
+            invalid_flags = self.data[
+                ~self.data['charge_off_flag'].isin([0, 1])
             ]
-            if not invalid_rates.empty:
-                raise ValueError(f"Invalid charge-off rates found: {invalid_rates['charge_off_rate'].unique()}\n"
-                               f"Charge-off rates must be 0 or 1 (binary flags)")
+            if not invalid_flags.empty:
+                raise ValueError(f"Invalid charge-off flags found: {invalid_flags['charge_off_flag'].unique()}\n"
+                               f"Charge-off flags must be 0 or 1 (binary flags)")
         
         # Validate seasoning months
         if 'seasoning_month' in self.data.columns:
@@ -466,7 +466,7 @@ class LoanDataLoader:
             max_seasoning = vintage_data['seasoning_month'].max()
             
             # Check if any loans in this vintage charged off
-            charged_off_loans = vintage_data[vintage_data['charge_off_rate'] == 1]
+            charged_off_loans = vintage_data[vintage_data['charge_off_flag'] == 1]
             
             if not charged_off_loans.empty:
                 # Find the first seasoning month where any loan charged off
@@ -493,12 +493,12 @@ class LoanDataLoader:
                         # Create missing record for charged-off loan
                         if month >= first_charge_off_month:
                             # Loan is charged off
-                            charge_off_rate = 1
+                            charge_off_flag = 1
                             charge_off_amount = 0.0  # Already charged off in previous month
                             outstanding_balance = 0.0
                         else:
                             # Loan is still performing (shouldn't happen, but handle gracefully)
-                            charge_off_rate = 0
+                            charge_off_flag = 0
                             charge_off_amount = 0.0
                             # Estimate outstanding balance
                             outstanding_balance = loan_amount * (1 - month / term)
@@ -518,7 +518,7 @@ class LoanDataLoader:
                             'interest_rate': interest_rate,
                             'term': term,
                             'outstanding_balance': outstanding_balance,
-                            'charge_off_rate': charge_off_rate,
+                            'charge_off_flag': charge_off_flag,
                             'charge_off_amount': charge_off_amount,
                             'vintage_year': vintage_date.year,
                             'vintage_month': vintage_date.month,
@@ -561,10 +561,10 @@ class LoanDataLoader:
             'loan_id': 'count'
         }).reset_index()
         
-        vintage_summary['charge_off_rate'] = (
+        vintage_summary['charge_off_flag'] = (
             vintage_summary['charge_off_amount'] / vintage_summary['outstanding_balance']
         )
-        vintage_summary['cumulative_charge_off_rate'] = (
+        vintage_summary['cumulative_charge_off_flag'] = (
             vintage_summary.groupby(['vintage_date', 'fico_band'])['charge_off_amount'].cumsum() /
             vintage_summary.groupby(['vintage_date', 'fico_band'])['loan_amount'].first()
         )
@@ -642,7 +642,7 @@ class LoanDataLoader:
             'total_loan_amount': self.data['loan_amount'].sum(),
             'fico_bands': self.data['fico_band'].value_counts().to_dict(),
             'risk_grades': self.data['risk_grade'].value_counts().sort_index().to_dict(),
-            'avg_charge_off_rate': self.data['charge_off_rate'].mean(),
+            'avg_charge_off_flag': self.data['charge_off_flag'].mean(),
             'avg_fico_score': self.data['fico_score'].mean()
         }
         
@@ -665,7 +665,7 @@ class LoanDataLoader:
                 'seasoning_month': 1,
                 'fico_score': 650,
                 'loan_amount': 25000.00,
-                'charge_off_rate': 0,
+                'charge_off_flag': 0,
                 'charge_off_amount': 0.00,
                 'outstanding_balance': 24875.00,
                 'interest_rate': 0.085,
@@ -678,7 +678,7 @@ class LoanDataLoader:
                 'seasoning_month': 2,
                 'fico_score': 650,
                 'loan_amount': 25000.00,
-                'charge_off_rate': 0,
+                'charge_off_flag': 0,
                 'charge_off_amount': 0.00,
                 'outstanding_balance': 24800.37,
                 'interest_rate': 0.085,
@@ -691,7 +691,7 @@ class LoanDataLoader:
                 'seasoning_month': 3,
                 'fico_score': 650,
                 'loan_amount': 25000.00,
-                'charge_off_rate': 1,
+                'charge_off_flag': 1,
                 'charge_off_amount': 17500.00,
                 'outstanding_balance': 0.00,
                 'interest_rate': 0.085,
@@ -704,7 +704,7 @@ class LoanDataLoader:
                 'seasoning_month': 1,
                 'fico_score': 720,
                 'loan_amount': 35000.00,
-                'charge_off_rate': 0,
+                'charge_off_flag': 0,
                 'charge_off_amount': 0.00,
                 'outstanding_balance': 34947.50,
                 'interest_rate': 0.075,
@@ -785,7 +785,7 @@ class LoanDataLoader:
                         outstanding_balance = 0.0
                     
                     # Determine if loan charges off this month
-                    charge_off_rate = 0
+                    charge_off_flag = 0
                     charge_off_amount = 0.0
                     
                     if not loan_charged_off and outstanding_balance > 0:
@@ -795,7 +795,7 @@ class LoanDataLoader:
                         if np.random.random() < monthly_co_prob:
                             loan_charged_off = True
                             charge_off_month = seasoning_month
-                            charge_off_rate = 1
+                            charge_off_flag = 1
                             charge_off_amount = outstanding_balance * 0.8  # 80% of balance
                             outstanding_balance = 0.0
                     
@@ -815,7 +815,7 @@ class LoanDataLoader:
                                 'interest_rate': interest_rate,
                                 'term': term,
                                 'outstanding_balance': outstanding_balance,
-                                'charge_off_rate': charge_off_rate,
+                                'charge_off_flag': charge_off_flag,
                                 'charge_off_amount': charge_off_amount
                             }
                             data.append(record)
@@ -834,7 +834,7 @@ class LoanDataLoader:
                             'interest_rate': interest_rate,
                             'term': term,
                             'outstanding_balance': outstanding_balance,
-                            'charge_off_rate': charge_off_rate,
+                            'charge_off_flag': charge_off_flag,
                             'charge_off_amount': charge_off_amount
                         }
                         data.append(record)

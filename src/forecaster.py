@@ -180,10 +180,10 @@ class ChargeOffForecaster:
             'fico_band': fico_band,
             'seasoning_month': seasoning_months,
             'outstanding_balance': outstanding_balances,
-            'charge_off_rate': adjusted_charge_off_rates,
+            'charge_off_flag': adjusted_charge_off_rates,
             'charge_off_amount': charge_off_amounts,
             'cumulative_charge_off_amount': np.cumsum(charge_off_amounts),
-            'cumulative_charge_off_rate': np.cumsum(charge_off_amounts) / loan_amount
+            'cumulative_charge_off_flag': np.cumsum(charge_off_amounts) / loan_amount
         })
         
         return forecast_df
@@ -206,13 +206,13 @@ class ChargeOffForecaster:
         }).reset_index()
         
         # Calculate dollar-weighted charge-off rate
-        aggregate_forecast['charge_off_rate'] = (
+        aggregate_forecast['charge_off_flag'] = (
             aggregate_forecast['charge_off_amount'] / aggregate_forecast['outstanding_balance']
         )
         
         # Calculate cumulative charge-off rate
         total_loan_amount = fico_forecasts.groupby('vintage_date')['outstanding_balance'].first().sum()
-        aggregate_forecast['cumulative_charge_off_rate'] = (
+        aggregate_forecast['cumulative_charge_off_flag'] = (
             aggregate_forecast['cumulative_charge_off_amount'] / total_loan_amount
         )
         
@@ -284,7 +284,7 @@ class ChargeOffForecaster:
             'cumulative_charge_off_amount': 'sum'
         }).reset_index()
         
-        portfolio_summary['charge_off_rate'] = (
+        portfolio_summary['charge_off_flag'] = (
             portfolio_summary['charge_off_amount'] / portfolio_summary['outstanding_balance']
         )
         
@@ -414,7 +414,7 @@ class ChargeOffForecaster:
             scenario_forecast = base_forecast.copy()
             scenario_forecast['charge_off_amount'] *= adjustment_factor
             scenario_forecast['cumulative_charge_off_amount'] = scenario_forecast['charge_off_amount'].cumsum()
-            scenario_forecast['charge_off_rate'] = (
+            scenario_forecast['charge_off_flag'] = (
                 scenario_forecast['charge_off_amount'] / scenario_forecast['outstanding_balance']
             )
             
@@ -438,13 +438,13 @@ class ChargeOffForecaster:
         metrics['total_charge_offs'] = forecast_df['charge_off_amount'].sum()
         
         # Peak charge-off rate
-        metrics['peak_charge_off_rate'] = forecast_df['charge_off_rate'].max()
+        metrics['peak_charge_off_flag'] = forecast_df['charge_off_flag'].max()
         metrics['peak_charge_off_month'] = forecast_df.loc[
-            forecast_df['charge_off_rate'].idxmax(), 'report_date'
+            forecast_df['charge_off_flag'].idxmax(), 'report_date'
         ]
         
         # Average charge-off rate
-        metrics['avg_charge_off_rate'] = forecast_df['charge_off_rate'].mean()
+        metrics['avg_charge_off_flag'] = forecast_df['charge_off_flag'].mean()
         
         # Charge-off timing
         cumulative_charge_offs = forecast_df['cumulative_charge_off_amount'].iloc[-1]
@@ -496,13 +496,13 @@ class ChargeOffForecaster:
         axes[0, 0].tick_params(axis='x', rotation=45)
         
         # 2. Charge-off rates
-        axes[0, 1].plot(forecast_df['report_date'], forecast_df['charge_off_rate'], 
+        axes[0, 1].plot(forecast_df['report_date'], forecast_df['charge_off_flag'], 
                        'b-', linewidth=2, label='Base Case')
         
         if scenarios:
             for i, (scenario_name, scenario_df) in enumerate(scenarios.items()):
                 if i < len(colors):
-                    axes[0, 1].plot(scenario_df['report_date'], scenario_df['charge_off_rate'],
+                    axes[0, 1].plot(scenario_df['report_date'], scenario_df['charge_off_flag'],
                                    colors[i], linewidth=2, label=scenario_name)
         
         axes[0, 1].set_title('Monthly Charge-off Rates')

@@ -9,12 +9,12 @@ The Vintage Forecasts system now supports flexible data handling that can automa
 ### Option 1: Complete Vintage Data (Traditional)
 **Characteristics:**
 - Loans continue appearing in all seasoning months after charge-off
-- Charge-off rate = 1 and charge-off amount = 0 for months after initial charge-off
+- Charge-off flag = 1 and charge-off amount = 0 for months after initial charge-off
 - Outstanding balance = 0 for months after charge-off
 
 **Example:**
 ```
-loan_id, vintage_date, seasoning_month, charge_off_rate, charge_off_amount, outstanding_balance
+loan_id, vintage_date, seasoning_month, charge_off_flag, charge_off_amount, outstanding_balance
 L001, 2020-01-01, 1, 0, 0.0, 35000.0
 L001, 2020-01-01, 2, 0, 0.0, 34000.0
 L001, 2020-01-01, 3, 1, 28000.0, 0.0      # Charge-off month
@@ -38,7 +38,7 @@ L001, 2020-01-01, 5, 1, 0.0, 0.0          # Continues after charge-off
 
 **Example:**
 ```
-loan_id, vintage_date, seasoning_month, charge_off_rate, charge_off_amount, outstanding_balance
+loan_id, vintage_date, seasoning_month, charge_off_flag, charge_off_amount, outstanding_balance
 L001, 2020-01-01, 1, 0, 0.0, 35000.0
 L001, 2020-01-01, 2, 0, 0.0, 34000.0
 L001, 2020-01-01, 3, 1, 28000.0, 0.0      # Charge-off month - last record
@@ -61,7 +61,7 @@ The system automatically detects and handles incomplete vintage data through the
 
 1. **Detection**: Identifies charged-off loans that are missing from future seasoning months
 2. **Completion**: Fills in missing seasoning months with appropriate charge-off flags
-3. **Propagation**: Sets charge_off_rate = 1, charge_off_amount = 0, outstanding_balance = 0 for future months
+3. **Propagation**: Sets charge_off_flag = 1, charge_off_amount = 0, outstanding_balance = 0 for future months
 4. **Validation**: Ensures complete seasoning curves for accurate vintage analysis
 
 ### Example Completion Process
@@ -195,7 +195,7 @@ If you want to switch to the more efficient incomplete format:
 If you prefer the traditional complete format:
 
 1. **Modify your data export** to include all seasoning months
-2. **Set charge_off_rate = 1** for months after charge-off
+2. **Set charge_off_flag = 1** for months after charge-off
 3. **Set charge_off_amount = 0** for months after charge-off
 4. **Set outstanding_balance = 0** for months after charge-off
 

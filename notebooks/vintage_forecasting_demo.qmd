@@ -278,3 +278,5 @@ This demonstration showcases the comprehensive capabilities of the Vintage Forec
 5. **Interactive visualizations** facilitate clear communication of results
 
 The system is ready for production use and can be customized for specific organizational needs and risk management requirements. 
+
+- **Key fields**: `loan_id`, `vintage_date`, `seasoning_month`, `charge_off_flag`, `charge_off_amount`, `outstanding_balance`, `term`, `fico_band`. 

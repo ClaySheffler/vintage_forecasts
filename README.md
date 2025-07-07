@@ -158,7 +158,7 @@ When using real data (source='file'), the system expects the following file form
 | `seasoning_month` | Integer | Months since origination | 1, 2, 3, ... |
 | `fico_score` | Integer | FICO score at origination | 650, 720, 780, ... |
 | `loan_amount` | Float | Original loan amount | 25000.00 |
-| `charge_off_rate` | Integer | Binary charge-off flag (0=no charge-off, 1=charged off) | 0, 1 |
+| `charge_off_flag` | Integer | Binary charge-off flag (0=no charge-off, 1=charged off) | 0, 1 |
 | `charge_off_amount` | Float | Amount charged off (0 if no charge-off, typically 70-90% of original principal if defaulted) | 0.00, 17500.00 |
 
 #### Optional Columns
@@ -175,7 +175,7 @@ When using real data (source='file'), the system expects the following file form
 
 **CSV Format:**
 ```csv
-loan_id,vintage_date,report_date,seasoning_month,fico_score,loan_amount,charge_off_rate,charge_off_amount,outstanding_balance
+loan_id,vintage_date,report_date,seasoning_month,fico_score,loan_amount,charge_off_flag,charge_off_amount,outstanding_balance
 LOAN_001,2014-01-15,2014-02-15,1,650,25000.00,0,0.00,24875.00
 LOAN_001,2014-01-15,2014-03-15,2,650,25000.00,0,0.00,24800.37
 LOAN_001,2014-01-15,2014-04-15,3,650,25000.00,1,17500.00,0.00
@@ -192,7 +192,7 @@ Same column structure as CSV, with efficient compression.
 
 1. **Date Format**: Use ISO format (YYYY-MM-DD) or pandas-compatible date formats
 2. **FICO Scores**: Must be integers between 300-850
-3. **Charge-off Rates**: Must be 0 or 1 (binary flags indicating charge-off status)
+3. **Charge-off Flags**: Must be 0 or 1 (binary flags indicating charge-off status)
 4. **Monetary Amounts**: Use consistent currency units (e.g., USD)
 5. **Seasoning Months**: Must be non-negative integers
 6. **Data Completeness**: All required columns must be present
@@ -499,7 +499,7 @@ The system is designed to handle both complete and incomplete vintage data forma
 The system automatically detects and handles incomplete vintage data by:
 1. Identifying charged-off loans that are missing from future seasoning months
 2. Filling in missing seasoning months with appropriate charge-off flags
-3. Propagating charge-off status (charge_off_rate = 1, charge_off_amount = 0, outstanding_balance = 0)
+3. Propagating charge-off status (charge_off_flag = 1, charge_off_amount = 0, outstanding_balance = 0)
 4. Ensuring complete seasoning curves for accurate vintage analysis
 
 This allows you to use either data format without any changes to your analysis workflow.
@@ -522,3 +522,5 @@ print(f"Original: {len(incomplete_data)} records")
 print(f"Completed: {len(completed_data)} records")
 # Both approaches produce identical analysis-ready data!
 ```
+
+- At the individual loan/seasoning month level, use 'charge_off_flag' (0 or 1). 'charge_off_rate' is only meaningful for aggregated data (e.g., a group of loans).
