@@ -1,5 +1,7 @@
 """
-Simple example demonstrating FICO-segmented vintage charge-off forecasting.
+Example script for FICO-segmented vintage charge-off forecasting.
+Demonstrates key features: FICO segmentation, quality mix analysis, and flexible data handling.
+For a full flexible data handling demo, see demo_flexible_data.py.
 """
 
 import pandas as pd
@@ -10,7 +12,7 @@ from src.forecaster import ChargeOffForecaster
 
 
 def main():
-    """Simple example of FICO-segmented vintage forecasting."""
+    """Simple example of FICO-Segmented Vintage Forecasting."""
     print("=== FICO-Segmented Vintage Forecasting Example ===\n")
     
     # 1. Load synthetic data with FICO segmentation

@@ -19,7 +19,7 @@ execute:
 
 # Introduction
 
-This document provides a rigorous, transparent, and reproducible explanation of the mathematical and statistical methods used in the Vintage Forecasting System. It is intended for model validators, risk professionals, and technical stakeholders who require confidence in the system's outputs.
+This document explains the mathematical and statistical methods used in the Vintage Forecasting System. For a full list of models, comparison tables, and assessment criteria, see the Appendix.
 
 # 1. Data Model and Preprocessing
 
@@ -61,17 +61,7 @@ def assign_fico_band(fico):
 
 ## 2.3. Model Candidates
 
-To increase trust and transparency, the system fits and compares several models to the cumulative charge-off data for each (vintage, FICO band) segment:
-
-- **Weibull CDF**: Flexible, interpretable, commonly used for time-to-event data.
-- **Lognormal CDF**: Captures right-skewed timing of losses, interpretable.
-- **Gompertz CDF**: Handles saturation and deceleration, interpretable.
-- **Simple Linear/Polynomial Trend**: Baseline, highly explainable, but may underfit.
-- **Scaling Method**: Scales observed charge-off rate at a given month by the reciprocal of the typical proportion of lifetime charge-offs observed at that month (simple financial scaling).
-- **Additive Method**: Adds expected future charge-off rates (from historical averages) to the current observed rate (simple additive projection).
-- **(Optional) Ensemble/Weighted Average**: Combines forecasts from above models, potentially improving robustness.
-
-> **Note:** All models are fit to the time series of cumulative charge-off rates by seasoning month. No macroeconomic factors are included in the base models unless such data is available and explicitly incorporated.
+The system uses a multi-model approach, fitting and comparing several models (parametric curves, simple heuristics, and ensemble methods) to the cumulative charge-off data for each (vintage, FICO band) segment. See the Appendix for details.
 
 ## 2.4. Curve Fitting Procedure
 

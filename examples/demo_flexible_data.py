@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Demonstration of Flexible Data Handling in Vintage Forecasts
-
-This script demonstrates how the system can handle both complete and incomplete
-vintage data formats automatically.
+Demonstration of flexible data handling in the Vintage Forecasts system.
+Shows how the system processes both complete and incomplete vintage data formats.
+For more details, see the methodology and main example scripts.
 """
 
 import sys

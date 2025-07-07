@@ -1,6 +1,7 @@
 """
 Main script for vintage charge-off forecasting with FICO segmentation.
 Demonstrates the complete workflow from data loading to forecasting with quality mix analysis.
+For more details, see the methodology and example scripts.
 """
 
 import pandas as pd
