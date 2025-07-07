@@ -511,4 +511,91 @@ class VintageAnalyzer:
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
         
-        plt.show() 
+        plt.show()
+
+    def analyze_vintage_data(self, data: pd.DataFrame) -> Dict:
+        """
+        Analyze vintage data by FICO band.
+        
+        Args:
+            data: DataFrame with vintage data
+            
+        Returns:
+            Dictionary containing analysis results
+        """
+        print("Analyzing vintage data by FICO band...")
+        
+        results = {
+            'vintage_summary': {},
+            'fico_band_analysis': {},
+            'seasoning_curves': {},
+            'quality_mix_trends': {},
+            'charge_off_patterns': {}
+        }
+        
+        # Overall vintage summary
+        results['vintage_summary'] = self._calculate_vintage_summary(data)
+        
+        # Analyze each FICO band
+        for fico_band in self.FICO_BANDS.keys():
+            print(f"  Analyzing FICO band: {fico_band}")
+            band_data = data[data['fico_band'] == fico_band].copy()
+            
+            if not band_data.empty:
+                results['fico_band_analysis'][fico_band] = self._analyze_fico_band(band_data)
+                results['seasoning_curves'][fico_band] = self._fit_seasoning_curves(band_data)
+                results['charge_off_patterns'][fico_band] = self._analyze_charge_off_patterns(band_data)
+        
+        # Quality mix trends
+        results['quality_mix_trends'] = self._analyze_quality_mix_trends(data)
+        
+        return results
+    
+    def _analyze_charge_off_patterns(self, data: pd.DataFrame) -> Dict:
+        """
+        Analyze charge-off patterns for a FICO band.
+        
+        Args:
+            data: DataFrame for a specific FICO band
+            
+        Returns:
+            Dictionary with charge-off pattern analysis
+        """
+        patterns = {}
+        
+        # Calculate cumulative charge-off rates by seasoning
+        cumulative_co = data.groupby('seasoning_month').agg({
+            'charge_off_rate': 'sum',
+            'loan_id': 'nunique'
+        }).reset_index()
+        cumulative_co['cumulative_charge_off_rate'] = (
+            cumulative_co['charge_off_rate'].cumsum() / cumulative_co['loan_id'].iloc[0]
+        )
+        
+        patterns['cumulative_charge_off_curve'] = cumulative_co
+        
+        # Calculate charge-off timing distribution
+        charge_off_timing = data[data['charge_off_rate'] == 1].groupby('seasoning_month').size()
+        patterns['charge_off_timing_distribution'] = charge_off_timing.to_dict()
+        
+        # Calculate average seasoning at charge-off
+        if not data[data['charge_off_rate'] == 1].empty:
+            avg_seasoning_at_co = data[data['charge_off_rate'] == 1]['seasoning_month'].mean()
+            patterns['average_seasoning_at_charge_off'] = avg_seasoning_at_co
+        else:
+            patterns['average_seasoning_at_charge_off'] = None
+        
+        # Calculate charge-off amount patterns
+        co_amounts = data[data['charge_off_amount'] > 0]
+        if not co_amounts.empty:
+            patterns['charge_off_amount_stats'] = {
+                'mean': co_amounts['charge_off_amount'].mean(),
+                'median': co_amounts['charge_off_amount'].median(),
+                'std': co_amounts['charge_off_amount'].std(),
+                'min': co_amounts['charge_off_amount'].min(),
+                'max': co_amounts['charge_off_amount'].max()
+            }
+        else:
+            patterns['charge_off_amount_stats'] = None
+        
+        return patterns 

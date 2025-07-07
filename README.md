@@ -106,6 +106,85 @@ forecast = forecaster.forecast_vintage_charge_offs_by_fico(
 )
 ```
 
+### Data Format Requirements
+
+When using real data (source='file'), the system expects the following file format:
+
+#### Required Columns
+
+| Column Name | Data Type | Description | Example |
+|-------------|-----------|-------------|---------|
+| `loan_id` | String | Unique loan identifier | "LOAN_001234" |
+| `vintage_date` | Date | Loan origination date | "2014-01-15" |
+| `report_date` | Date | Performance reporting date | "2014-02-15" |
+| `seasoning_month` | Integer | Months since origination | 1, 2, 3, ... |
+| `fico_score` | Integer | FICO score at origination | 650, 720, 780, ... |
+| `loan_amount` | Float | Original loan amount | 25000.00 |
+| `charge_off_rate` | Integer | Binary charge-off flag (0=no charge-off, 1=charged off) | 0, 1 |
+| `charge_off_amount` | Float | Amount charged off (0 if no charge-off, typically 70-90% of original principal if defaulted) | 0.00, 17500.00 |
+
+#### Optional Columns
+
+| Column Name | Data Type | Description | Example |
+|-------------|-----------|-------------|---------|
+| `outstanding_balance` | Float | Outstanding balance at report date | 24875.00 |
+| `interest_rate` | Float | Loan interest rate | 0.085 (8.5%) |
+| `term` | Integer | Loan term in months | 120 |
+| `fico_band` | String | FICO score band | "650-699" |
+| `risk_grade` | Integer | Risk grade (1-5) | 4 |
+
+#### File Format Examples
+
+**CSV Format:**
+```csv
+loan_id,vintage_date,report_date,seasoning_month,fico_score,loan_amount,charge_off_rate,charge_off_amount,outstanding_balance
+LOAN_001,2014-01-15,2014-02-15,1,650,25000.00,0,0.00,24875.00
+LOAN_001,2014-01-15,2014-03-15,2,650,25000.00,0,0.00,24800.37
+LOAN_001,2014-01-15,2014-04-15,3,650,25000.00,1,17500.00,0.00
+LOAN_002,2014-01-15,2014-02-15,1,720,35000.00,0,0.00,34947.50
+```
+
+**Excel Format:**
+Same column structure as CSV, with multiple sheets supported.
+
+**Parquet Format:**
+Same column structure as CSV, with efficient compression.
+
+#### Data Requirements
+
+1. **Date Format**: Use ISO format (YYYY-MM-DD) or pandas-compatible date formats
+2. **FICO Scores**: Must be integers between 300-850
+3. **Charge-off Rates**: Must be 0 or 1 (binary flags indicating charge-off status)
+4. **Monetary Amounts**: Use consistent currency units (e.g., USD)
+5. **Seasoning Months**: Must be non-negative integers
+6. **Data Completeness**: All required columns must be present
+7. **Data Consistency**: Each loan should have records for all seasoning months from origination to current date
+
+#### Loading Real Data
+
+```python
+# Load from CSV file
+loan_data = data_loader.load_data(
+    source='file',
+    file_path='path/to/loan_data.csv',
+    file_type='csv'
+)
+
+# Load from Excel file
+loan_data = data_loader.load_data(
+    source='file',
+    file_path='path/to/loan_data.xlsx',
+    file_type='excel'
+)
+
+# Load from Parquet file
+loan_data = data_loader.load_data(
+    source='file',
+    file_path='path/to/loan_data.parquet',
+    file_type='parquet'
+)
+```
+
 ### Interactive Demo
 
 For an interactive demonstration with visualizations, run the Jupyter notebook:
@@ -309,3 +388,48 @@ For questions or support, please contact the development team or create an issue
 - **v1.0.0**: Initial release with core forecasting functionality
 - **v1.1.0**: Added scenario analysis and risk metrics
 - **v1.2.0**: Enhanced visualizations and export capabilities
+
+## Data Handling Flexibility
+
+The system is designed to handle both complete and incomplete vintage data formats:
+
+### Complete Vintage Data (Traditional)
+- Loans continue appearing in all seasoning months after charge-off
+- Charge-off rate = 1 and charge-off amount = 0 for months after initial charge-off
+- Outstanding balance = 0 for months after charge-off
+- **Advantage**: Complete seasoning curves for all loans
+- **Disadvantage**: Larger data volume, redundant records
+
+### Incomplete Vintage Data (Alternative)
+- Loans disappear from the data after charge-off
+- Only the charge-off month record is included
+- **Advantage**: Smaller data volume, cleaner data
+- **Disadvantage**: Missing seasoning months for charged-off loans
+
+### Automatic Data Completion
+The system automatically detects and handles incomplete vintage data by:
+1. Identifying charged-off loans that are missing from future seasoning months
+2. Filling in missing seasoning months with appropriate charge-off flags
+3. Propagating charge-off status (charge_off_rate = 1, charge_off_amount = 0, outstanding_balance = 0)
+4. Ensuring complete seasoning curves for accurate vintage analysis
+
+This allows you to use either data format without any changes to your analysis workflow.
+
+### Example: Data Completion Process
+```python
+# Generate incomplete vintage data (loans disappear after charge-off)
+incomplete_data = data_loader.generate_synthetic_data(
+    num_vintages=3,
+    loans_per_vintage=50,
+    max_seasoning=24,
+    incomplete_vintages=True  # Creates incomplete data
+)
+
+# Load and preprocess - automatically completes missing seasoning months
+data_loader.data = incomplete_data
+completed_data = data_loader.preprocess_data()
+
+print(f"Original: {len(incomplete_data)} records")
+print(f"Completed: {len(completed_data)} records")
+# Both approaches produce identical analysis-ready data!
+```

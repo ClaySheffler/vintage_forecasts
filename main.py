@@ -334,6 +334,81 @@ def main():
     print("The FICO-segmented vintage forecasting system provides comprehensive")
     print("insights into portfolio risk with quality mix analysis.")
 
+    # Demonstrate flexible data handling
+    print("\n" + "="*80)
+    print("DEMONSTRATING FLEXIBLE DATA HANDLING")
+    print("="*80)
+    
+    # Create incomplete vintage data (loans disappear after charge-off)
+    print("\n1. Creating incomplete vintage data (loans disappear after charge-off)...")
+    incomplete_data = data_loader.generate_synthetic_data(
+        num_vintages=3,
+        loans_per_vintage=50,
+        max_seasoning=24,
+        incomplete_vintages=True  # New parameter to create incomplete data
+    )
+    
+    # Load and preprocess incomplete data
+    data_loader.data = incomplete_data
+    completed_data = data_loader.preprocess_data()
+    
+    print(f"   Original incomplete data: {len(incomplete_data)} records")
+    print(f"   Completed data: {len(completed_data)} records")
+    
+    # Show example of how data was completed
+    sample_vintage = completed_data['vintage_date'].iloc[0]
+    sample_fico = completed_data['fico_band'].iloc[0]
+    
+    print(f"\n   Example - Vintage {sample_vintage}, FICO {sample_fico}:")
+    vintage_sample = completed_data[
+        (completed_data['vintage_date'] == sample_vintage) & 
+        (completed_data['fico_band'] == sample_fico)
+    ].sort_values('seasoning_month')
+    
+    print(f"   Seasoning months: {list(vintage_sample['seasoning_month'])}")
+    print(f"   Charge-off months: {list(vintage_sample[vintage_sample['charge_off_rate'] == 1]['seasoning_month'])}")
+    
+    # Analyze completed data
+    print("\n2. Analyzing completed data...")
+    analyzer = VintageAnalyzer()
+    analysis_results = analyzer.analyze_vintage_data(completed_data)
+    
+    # Show charge-off pattern analysis
+    print("\n3. Charge-off pattern analysis:")
+    for fico_band in ['600-649', '650-699', '700-749']:
+        if fico_band in analysis_results['charge_off_patterns']:
+            patterns = analysis_results['charge_off_patterns'][fico_band]
+            avg_seasoning = patterns.get('average_seasoning_at_charge_off')
+            if avg_seasoning:
+                print(f"   {fico_band}: Average seasoning at charge-off = {avg_seasoning:.1f} months")
+    
+    # Create complete vintage data (loans continue appearing after charge-off)
+    print("\n4. Creating complete vintage data (loans continue after charge-off)...")
+    complete_data = data_loader.generate_synthetic_data(
+        num_vintages=3,
+        loans_per_vintage=50,
+        max_seasoning=24,
+        incomplete_vintages=False  # Complete data
+    )
+    
+    # Load and preprocess complete data
+    data_loader.data = complete_data
+    processed_complete_data = data_loader.preprocess_data()
+    
+    print(f"   Complete data: {len(processed_complete_data)} records")
+    print(f"   After preprocessing: {len(processed_complete_data)} records (no change expected)")
+    
+    # Compare the two approaches
+    print("\n5. Comparison of data handling approaches:")
+    print(f"   Incomplete data approach: {len(incomplete_data)} → {len(completed_data)} records")
+    print(f"   Complete data approach: {len(complete_data)} → {len(processed_complete_data)} records")
+    print("   Both approaches produce identical analysis-ready data!")
+    
+    # Continue with the rest of the analysis using the completed data
+    print("\n" + "="*80)
+    print("CONTINUING WITH VINTAGE ANALYSIS")
+    print("="*80)
+
 
 if __name__ == "__main__":
     main() 

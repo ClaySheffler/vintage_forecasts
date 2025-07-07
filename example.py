@@ -157,6 +157,72 @@ def main():
     
     print("\nExample completed successfully!")
 
+    # Example 3: Flexible Data Handling
+    print("\n" + "="*60)
+    print("EXAMPLE 3: FLEXIBLE DATA HANDLING")
+    print("="*60)
+    
+    # Demonstrate handling incomplete vintage data
+    print("\n3.1 Handling incomplete vintage data (loans disappear after charge-off)")
+    
+    # Generate incomplete data
+    incomplete_data = data_loader.generate_synthetic_data(
+        num_vintages=2,
+        loans_per_vintage=30,
+        max_seasoning=12,
+        incomplete_vintages=True
+    )
+    
+    print(f"   Generated incomplete data: {len(incomplete_data)} records")
+    
+    # Show sample of incomplete data
+    sample_loan = incomplete_data['loan_id'].iloc[0]
+    loan_data = incomplete_data[incomplete_data['loan_id'] == sample_loan]
+    print(f"   Sample loan {sample_loan}: {len(loan_data)} seasoning months")
+    print(f"   Charge-off month: {loan_data[loan_data['charge_off_rate'] == 1]['seasoning_month'].iloc[0] if not loan_data[loan_data['charge_off_rate'] == 1].empty else 'None'}")
+    
+    # Load and preprocess (automatically completes data)
+    data_loader.data = incomplete_data
+    completed_data = data_loader.preprocess_data()
+    
+    print(f"   Completed data: {len(completed_data)} records")
+    
+    # Show the same loan after completion
+    completed_loan_data = completed_data[completed_data['loan_id'] == sample_loan]
+    print(f"   Same loan after completion: {len(completed_loan_data)} seasoning months")
+    
+    # Analyze completed data
+    analyzer = VintageAnalyzer()
+    analysis = analyzer.analyze_vintage_data(completed_data)
+    
+    print(f"   Analysis completed successfully!")
+    print(f"   FICO bands analyzed: {list(analysis['fico_band_analysis'].keys())}")
+    
+    # Compare with complete data approach
+    print("\n3.2 Comparing with complete data approach")
+    
+    complete_data = data_loader.generate_synthetic_data(
+        num_vintages=2,
+        loans_per_vintage=30,
+        max_seasoning=12,
+        incomplete_vintages=False
+    )
+    
+    print(f"   Generated complete data: {len(complete_data)} records")
+    
+    # Load and preprocess complete data
+    data_loader.data = complete_data
+    processed_complete_data = data_loader.preprocess_data()
+    
+    print(f"   Processed complete data: {len(processed_complete_data)} records")
+    
+    # Both approaches should produce similar analysis results
+    print(f"   Both approaches work seamlessly!")
+    
+    print("\n" + "="*60)
+    print("ALL EXAMPLES COMPLETED SUCCESSFULLY!")
+    print("="*60)
+
 
 if __name__ == "__main__":
     main() 
