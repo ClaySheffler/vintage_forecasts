@@ -1,0 +1,178 @@
+---
+title: "Vintage Forecasting System: Detailed Methodology"
+subtitle: "Mathematical, Statistical, and Validation Deep Dive"
+author: "Vintage Forecasts System"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    theme: cosmo
+    css: styles.css
+    number-sections: true
+execute:
+  echo: true
+  warning: false
+  error: false
+---
+
+# Introduction
+
+This document provides a rigorous, transparent, and reproducible explanation of the mathematical and statistical methods used in the Vintage Forecasting System. It is intended for model validators, risk professionals, and technical stakeholders who require confidence in the system's outputs.
+
+# 1. Data Model and Preprocessing
+
+## 1.1. Data Structure
+
+- **Panel data**: Each row = loan, vintage, seasoning month.
+- **Key fields**: `loan_id`, `vintage_date`, `seasoning_month`, `fico_score`, `loan_amount`, `charge_off_rate`, `charge_off_amount`, `outstanding_balance`, `term`, `fico_band`, `risk_grade`.
+
+## 1.2. Data Cleaning and Validation
+
+- **Date parsing**: All dates are converted to pandas `datetime`.
+- **Missing values**: Critical fields must be present; others are imputed or flagged.
+- **Outlier detection**: Loans with implausible values (e.g., negative balances, FICO out of range) are flagged.
+- **FICO band assignment**: Explicit cutoffs, e.g., 600-649, 650-699, etc.
+
+```{python}
+def assign_fico_band(fico):
+    if fico >= 800: return '800+'
+    elif fico >= 750: return '750-799'
+    elif fico >= 700: return '700-749'
+    elif fico >= 650: return '650-699'
+    elif fico >= 600: return '600-649'
+    else: return '<600'
+```
+
+# 2. Vintage Cohorts and Seasoning Curves
+
+## 2.1. Cohort Definition
+
+- **Vintage**: All loans originated in a given month (or quarter).
+- **Analysis**: Performed at (vintage, FICO band) level.
+
+## 2.2. Cumulative and Incremental Charge-off Rates
+
+- **Cumulative**:  
+  $C_t = \frac{\sum_{i=1}^t \text{charge\_off\_amount}_i}{\text{original\_loan\_amount}}$
+- **Incremental**:  
+  $I_t = \frac{\text{charge\_off\_amount}_t}{\text{original\_loan\_amount}}$
+
+## 2.3. Mathematical Models for Seasoning
+
+### Weibull CDF
+$F(t; \alpha, \beta) = 1 - \exp\left(-\left(\frac{t}{\beta}\right)^\alpha\right)$
+
+### Lognormal CDF
+$F(t; \mu, \sigma) = \Phi\left(\frac{\ln t - \mu}{\sigma}\right)$
+
+### Gompertz CDF
+$F(t; a, b) = 1 - \exp\left(-a \frac{\exp(b t) - 1}{b}\right)$
+
+## 2.4. Curve Fitting Procedure
+
+- For each (vintage, FICO band), compute cumulative charge-off rates by seasoning month.
+- Use nonlinear least squares (scipy.optimize.curve_fit) to fit each curve.
+- Goodness-of-fit: $R^2$, RMSE, visual inspection.
+- Select best-fitting curve for each segment.
+
+```{python}
+from scipy.optimize import curve_fit
+import numpy as np
+
+def weibull_cdf(t, alpha, beta):
+    return 1 - np.exp(-(t / beta) ** alpha)
+
+# Example fit:
+t = np.arange(1, 37)
+y = np.array([0.01, 0.02, 0.03, ...])  # Cumulative charge-off rates
+params, _ = curve_fit(weibull_cdf, t, y, p0=[1.5, 20])
+fitted = weibull_cdf(t, *params)
+```
+
+## 2.5. Model Selection and Validation
+
+- Compare $R^2$ and RMSE for each model.
+- Use AIC/BIC for model parsimony if needed.
+- Visualize fit and residuals.
+
+# 3. Forecasting and Aggregation
+
+## 3.1. Portfolio Quality Mix
+
+- User specifies portfolio mix by FICO band (dollar-weighted).
+- System supports scenario analysis (Conservative, Balanced, Aggressive).
+
+## 3.2. Forward Projection
+
+- For each FICO band, use fitted curve to project cumulative charge-off rates for each future month.
+- Incremental charge-offs: $I_t = C_t - C_{t-1}$
+
+## 3.3. Dollar-weighted Aggregation
+
+$\text{Portfolio Charge-off}(t) = \sum_b w_b \cdot \text{Charge-off}_b(t)$
+
+where $w_b$ is the portfolio share of FICO band $b$.
+
+## 3.4. Scenario Analysis
+
+- Multiple quality mixes and economic overlays can be specified.
+- System outputs scenario-specific forecasts and risk metrics.
+
+# 4. Model Validation and Backtesting
+
+## 4.1. Goodness-of-Fit
+
+- $R^2$, RMSE, and visual inspection of fit for each seasoning curve.
+- Residual analysis for model misspecification.
+
+## 4.2. Out-of-Sample Testing
+
+- Holdout vintages are used to test predictive accuracy.
+- Forecasts are compared to actual realized charge-offs.
+
+## 4.3. Sensitivity Analysis
+
+- Impact of changing FICO mix, seasoning curve parameters, and economic overlays is quantified.
+
+# 5. Risk Metrics
+
+- **Lifetime Loss Rate**: Total charge-offs / original portfolio balance.
+- **Peak Charge-off Rate**: Maximum monthly incremental rate.
+- **Volatility**: Standard deviation of monthly rates.
+- **Concentration**: Herfindahl-Hirschman Index (HHI) for FICO and vintage.
+- **Scenario Sensitivity**: Range of outcomes across scenarios.
+
+# 6. Implementation Details
+
+- All code is implemented in Python using pandas, numpy, scipy, and matplotlib.
+- Data validation and error handling are performed at each step.
+- The system is modular and extensible for new models or risk factors.
+
+# 7. Limitations and Assumptions
+
+- Assumes historical seasoning patterns are predictive of future performance.
+- Does not model prepayment or recovery explicitly (can be extended).
+- Economic overlays are scenario-based, not macro-driven (can be extended).
+
+# 8. References
+
+- [Weibull Distribution](https://en.wikipedia.org/wiki/Weibull_distribution)
+- [Gompertz Function](https://en.wikipedia.org/wiki/Gompertz_function)
+- [Lognormal Distribution](https://en.wikipedia.org/wiki/Log-normal_distribution)
+- [Vintage Analysis in Credit Risk](https://www.moodysanalytics.com/-/media/whitepaper/2017/2017-10-10-vintage-analysis.pdf)
+
+# Appendix: Example Code
+
+```{python}
+# Example: Fitting a Weibull curve to cumulative charge-off data
+from scipy.optimize import curve_fit
+
+def weibull_cdf(t, alpha, beta):
+    return 1 - np.exp(-(t / beta) ** alpha)
+
+# t: array of seasoning months, y: cumulative charge-off rates
+params, _ = curve_fit(weibull_cdf, t, y, p0=[1.5, 20])
+fitted = weibull_cdf(t, *params)
+``` 

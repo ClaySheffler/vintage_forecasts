@@ -1,0 +1,111 @@
+/* Custom styles for Vintage Forecasting Demo */
+
+/* Headers */
+h1, h2, h3, h4, h5, h6 {
+    color: #2c3e50;
+    font-weight: 600;
+}
+
+h1 {
+    border-bottom: 3px solid #3498db;
+    padding-bottom: 10px;
+}
+
+h2 {
+    border-bottom: 2px solid #ecf0f1;
+    padding-bottom: 8px;
+    margin-top: 30px;
+}
+
+/* Code blocks */
+pre {
+    background-color: #f8f9fa;
+    border-left: 4px solid #3498db;
+    padding: 15px;
+    border-radius: 5px;
+}
+
+code {
+    background-color: #f1f2f6;
+    color: #e74c3c;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+/* Output styling */
+.cell-output {
+    background-color: #f8f9fa;
+    border-left: 4px solid #27ae60;
+    padding: 10px;
+    margin: 10px 0;
+    border-radius: 5px;
+}
+
+/* Tables */
+table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 20px 0;
+}
+
+th, td {
+    border: 1px solid #ddd;
+    padding: 12px;
+    text-align: left;
+}
+
+th {
+    background-color: #3498db;
+    color: white;
+    font-weight: 600;
+}
+
+tr:nth-child(even) {
+    background-color: #f2f2f2;
+}
+
+tr:hover {
+    background-color: #e8f4f8;
+}
+
+/* Figures */
+.figure {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.figure img {
+    max-width: 100%;
+    height: auto;
+    border-radius: 8px;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+/* Print styles */
+@media print {
+    .cell-output {
+        background-color: white !important;
+        border-left: none !important;
+    }
+    
+    pre {
+        background-color: white !important;
+        border-left: none !important;
+    }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    pre {
+        font-size: 12px;
+        padding: 10px;
+    }
+    
+    table {
+        font-size: 14px;
+    }
+    
+    th, td {
+        padding: 8px;
+    }
+} 
