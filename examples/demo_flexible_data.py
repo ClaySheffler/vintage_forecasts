@@ -14,7 +14,7 @@ from datetime import datetime
 # Add src to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
 
-from data_loader import DataLoader
+from data_loader import LoanDataLoader
 from vintage_analyzer import VintageAnalyzer
 
 def demonstrate_flexible_data_handling():
@@ -25,7 +25,7 @@ def demonstrate_flexible_data_handling():
     print("="*80)
     
     # Initialize data loader
-    data_loader = DataLoader()
+    data_loader = LoanDataLoader()
     
     # Scenario 1: Incomplete Vintage Data (loans disappear after charge-off)
     print("\n1. INCOMPLETE VINTAGE DATA SCENARIO")

@@ -11,6 +11,7 @@ import seaborn as sns
 from scipy import stats
 from scipy.optimize import curve_fit
 import warnings
+from datetime import datetime
 warnings.filterwarnings('ignore')
 
 
@@ -151,7 +152,8 @@ class VintageAnalyzer:
         
         # Filter to reasonable seasoning periods
         curve_data = self.vintage_summary[
-            self.vintage_summary['seasoning_month'] <= max_seasoning
+            (self.vintage_summary['seasoning_month'] >= 6) &
+            (self.vintage_summary['seasoning_month'] <= max_seasoning)
         ].copy()
         
         # Define seasoning curve functions
@@ -634,3 +636,65 @@ class VintageAnalyzer:
             patterns['charge_off_amount_stats'] = None
         
         return patterns 
+
+    def get_cumulative_gross_chargeoff_summary(self) -> pd.DataFrame:
+        """
+        Return a summary table of cumulative gross charge-off % (as of max seasoning) by FICO band and vintage.
+        This is the primary metric for reporting and forecasting.
+        """
+        if self.vintage_summary is None:
+            self.calculate_vintage_metrics()
+        # For each (vintage, fico_band), get the last cumulative_charge_off_flag
+        idx = self.vintage_summary.groupby(['vintage_date', 'fico_band'])['seasoning_month'].idxmax()
+        summary = self.vintage_summary.loc[idx, ['vintage_date', 'fico_band', 'cumulative_charge_off_flag']]
+        summary = summary.rename(columns={'cumulative_charge_off_flag': 'cumulative_gross_chargeoff_pct'})
+        return summary 
+
+    def to_quarterly_vintages(self):
+        """
+        Convert vintage_date to quarter start for quarterly analysis.
+        Adds a 'vintage_quarter' column to vintage_summary.
+        """
+        if 'vintage_date' in self.vintage_summary.columns:
+            self.vintage_summary['vintage_quarter'] = pd.to_datetime(self.vintage_summary['vintage_date']).dt.to_period('Q').dt.start_time
+
+    def get_mature_vintage_performance(self, mature_months=72, actuals_months=96, adjustment=0.01):
+        """
+        For each vintage x segment, return the 'final' cumulative gross charge-off %:
+        - If vintage is >= actuals_months old, use actuals (max observed).
+        - If vintage is between mature_months and actuals_months, use month mature_months + adjustment.
+        - Otherwise, NaN.
+        Returns a DataFrame with columns: vintage_quarter, fico_band, final_cumulative_gross_chargeoff_pct
+        """
+        if self.vintage_summary is None:
+            self.calculate_vintage_metrics()
+        self.to_quarterly_vintages()
+        today = pd.Timestamp(datetime.today().date())
+        results = []
+        for (vintage, band), group in self.vintage_summary.groupby(['vintage_quarter', 'fico_band']):
+            max_seasoning = group['seasoning_month'].max()
+            vintage_age_months = ((today - pd.to_datetime(vintage)).days // 30)
+            if vintage_age_months >= actuals_months:
+                # Use actuals (max observed)
+                final_cgco = group.loc[group['seasoning_month'] == max_seasoning, 'cumulative_charge_off_flag'].values[0]
+            elif mature_months <= vintage_age_months < actuals_months:
+                # Use month 72 + 1%
+                cgco_72 = group.loc[group['seasoning_month'] == mature_months, 'cumulative_charge_off_flag']
+                if not cgco_72.empty:
+                    final_cgco = cgco_72.values[0] + adjustment
+                else:
+                    final_cgco = None
+            else:
+                final_cgco = None
+            results.append({'vintage_quarter': vintage, 'fico_band': band, 'final_cumulative_gross_chargeoff_pct': final_cgco})
+        return pd.DataFrame(results)
+
+    def get_forecast_focus_vintages(self, focus_years=5):
+        """
+        Return list of vintage_quarters within the last focus_years.
+        """
+        self.to_quarterly_vintages()
+        today = pd.Timestamp(datetime.today().date())
+        cutoff = today - pd.DateOffset(years=focus_years)
+        focus_vintages = self.vintage_summary['vintage_quarter'][pd.to_datetime(self.vintage_summary['vintage_quarter']) >= cutoff].unique()
+        return list(focus_vintages) 

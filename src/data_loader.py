@@ -176,30 +176,24 @@ class LoanDataLoader:
                                 # Calculate outstanding balance
                                 remaining_balance = loan_amount * (1 - seasoning_month / term)
                                 
-                                # Calculate charge-off flag based on vintage, seasoning, and FICO
-                                base_rate = self._get_base_charge_off_rate(risk_grade)
-                                
-                                # Vintage effect (some vintages perform better/worse)
-                                vintage_effect = 0.5 + 0.5 * np.sin(vintage_date.month / 12 * 2 * np.pi)
-                                
-                                # Seasoning effect (charge-offs typically peak around 18-24 months)
-                                seasoning_effect = np.exp(-((seasoning_month - 20) ** 2) / 100)
-                                
-                                # FICO effect (higher FICO = lower charge-off rates)
-                                fico_effect = 1.0 - (risk_grade - 1) * 0.15
-                                
-                                # Economic cycle effect (simulate 2008-like crisis)
-                                if 2018 <= vintage_date.year <= 2020:
-                                    crisis_effect = 1.5
+                                # Enforce charge-off policy: no charge-off before month 6
+                                if seasoning_month < 6:
+                                    charge_off_flag = 0
                                 else:
-                                    crisis_effect = 1.0
-                                
-                                # Random variation
-                                random_effect = np.random.normal(1, 0.1)
-                                
-                                charge_off_flag = (base_rate * vintage_effect * seasoning_effect * 
-                                                 fico_effect * crisis_effect * random_effect)
-                                charge_off_flag = max(0, min(0.25, charge_off_flag))  # Cap at 25%
+                                    # Calculate charge-off flag based on vintage, seasoning, and FICO
+                                    base_rate = self._get_base_charge_off_rate(risk_grade)
+                                    vintage_effect = 0.5 + 0.5 * np.sin(vintage_date.month / 12 * 2 * np.pi)
+                                    seasoning_effect = np.exp(-((seasoning_month - 20) ** 2) / 100)
+                                    fico_effect = 1.0 - (risk_grade - 1) * 0.15
+                                    if 2018 <= vintage_date.year <= 2020:
+                                        crisis_effect = 1.5
+                                    else:
+                                        crisis_effect = 1.0
+                                    random_effect = np.random.normal(1, 0.1)
+                                    charge_off_flag = (base_rate * vintage_effect * seasoning_effect * 
+                                                     fico_effect * crisis_effect * random_effect)
+                                    # Convert to binary flag (simulate actual charge-off event)
+                                    charge_off_flag = 1 if np.random.rand() < charge_off_flag else 0
                                 
                                 data_rows.append({
                                     'loan_id': loan_id,
@@ -435,6 +429,18 @@ class LoanDataLoader:
         # Handle incomplete vintage data (fill missing seasoning months for charged-off loans)
         self.data = self._complete_vintage_data()
         
+        # Reassign early charge-offs to month 6 for modeling
+        mask_early_co = (self.data['charge_off_flag'] == 1) & (self.data['seasoning_month'] < 6)
+        if mask_early_co.any():
+            print(f"Reassigning {mask_early_co.sum()} early charge-offs to seasoning_month 6 for modeling.")
+            self.data.loc[mask_early_co, 'seasoning_month'] = 6
+        
+        # Flag and report early charge-offs
+        early_chargeoffs = self.data[(self.data['charge_off_flag'] == 1) & (self.data['seasoning_month'] < 6)]
+        if not early_chargeoffs.empty:
+            print(f"Warning: {len(early_chargeoffs)} loans charged off before 6 months. These are excluded from model fitting.")
+            print(early_chargeoffs[['loan_id', 'vintage_date', 'seasoning_month', 'charge_off_flag']].head())
+
         return self.data
     
     def _complete_vintage_data(self) -> pd.DataFrame:

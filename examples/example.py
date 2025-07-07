@@ -45,6 +45,18 @@ def main():
                     best_curve = curve_name
             print(f"     {fico_band}: {best_curve} (R² = {best_r2:.3f})")
     
+    # After vintage analysis
+    print("\nCumulative Gross Charge-off % by FICO Band and Vintage (Analysis):")
+    print(analyzer.get_cumulative_gross_chargeoff_summary())
+
+    # Show mature vintage performance
+    print("\nMature Vintage Performance Table (Final CGCO%):")
+    print(analyzer.get_mature_vintage_performance())
+
+    # Show forecast focus vintages
+    print("\nForecast Focus Vintages (last 5 years, quarterly):")
+    print(analyzer.get_forecast_focus_vintages())
+    
     # 3. Create forecaster
     print("\n3. Creating FICO-segmented forecaster...")
     forecaster = ChargeOffForecaster(analyzer, loan_data)
@@ -86,6 +98,10 @@ def main():
         portfolio_mix=portfolio_mix,
         forecast_horizon=60  # 5 years
     )
+    
+    # After forecasting (if applicable)
+    print("\nCumulative Gross Charge-off % by FICO Band and Vintage (Forecast):")
+    print(forecaster.get_cumulative_gross_chargeoff_forecast(forecast))
     
     # 6. Calculate key metrics
     print("\n6. Calculating forecast metrics...")

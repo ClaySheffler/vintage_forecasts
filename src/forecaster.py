@@ -121,6 +121,9 @@ class ChargeOffForecaster:
         # Calculate aggregate (dollar-weighted) metrics
         aggregate_forecast = self._calculate_aggregate_forecast(combined_forecast)
         
+        # Apply mask to set charge-off rates to zero for seasoning_month < 6
+        combined_forecast.loc[combined_forecast['seasoning_month'] < 6, ['charge_off_flag', 'charge_off_amount', 'cumulative_charge_off_flag', 'cumulative_charge_off_amount']] = 0
+        
         return aggregate_forecast
     
     def _forecast_single_fico_band(self, 
@@ -185,6 +188,9 @@ class ChargeOffForecaster:
             'cumulative_charge_off_amount': np.cumsum(charge_off_amounts),
             'cumulative_charge_off_flag': np.cumsum(charge_off_amounts) / loan_amount
         })
+        
+        # Apply mask to set charge-off rates to zero for seasoning_month < 6
+        forecast_df.loc[forecast_df['seasoning_month'] < 6, ['charge_off_flag', 'charge_off_amount', 'cumulative_charge_off_flag', 'cumulative_charge_off_amount']] = 0
         
         return forecast_df
     
@@ -613,4 +619,14 @@ class ChargeOffForecaster:
         return {
             'scaling': scaling_est,
             'additive': additive_est
-        } 
+        }
+
+    def get_cumulative_gross_chargeoff_forecast(self, forecast_df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Return a summary table of forecasted cumulative gross charge-off % (as of max seasoning) by FICO band and vintage.
+        This is the primary metric for reporting and forecasting.
+        """
+        idx = forecast_df.groupby(['vintage_date', 'fico_band'])['seasoning_month'].idxmax()
+        summary = forecast_df.loc[idx, ['vintage_date', 'fico_band', 'cumulative_charge_off_flag']]
+        summary = summary.rename(columns={'cumulative_charge_off_flag': 'cumulative_gross_chargeoff_pct'})
+        return summary 

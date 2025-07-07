@@ -1,3 +1,49 @@
+# Vintage Forecasts: Quick Start
+
+Vintage charge-off forecasting with FICO segmentation and flexible data handling.
+
+## Quick Start
+
+1. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Run the main demo:**
+   ```bash
+   python main.py
+   # or, for the interactive app:
+   streamlit run notebooks/snowflake_streamlit.py
+   ```
+
+3. **Minimal code example:**
+   ```python
+   from src.data_loader import LoanDataLoader
+   from src.vintage_analyzer import VintageAnalyzer
+   from src.forecaster import ChargeOffForecaster
+
+   # Load synthetic data
+   data_loader = LoanDataLoader()
+   loan_data = data_loader.load_data(source='synthetic')
+   loan_data = data_loader.preprocess_data()
+
+   # Analyze
+   analyzer = VintageAnalyzer(loan_data)
+   analyzer.calculate_vintage_metrics()
+   print(analyzer.get_cumulative_gross_chargeoff_summary())
+   ```
+
+## Workflow Diagram
+
+```mermaid
+flowchart TD
+    A[Input Data (CSV, Excel, or Synthetic)] --> B[LoanDataLoader]
+    B --> C[VintageAnalyzer]
+    C --> D[ChargeOffForecaster]
+    D --> E[Outputs: Cumulative Gross Charge-off %, Plots, Reports]
+    E --> F[Interactive Demo (Streamlit) or Notebooks]
+```
+
 # Vintage Charge-off Forecasting System with FICO Segmentation
 
 A comprehensive system for forecasting loan charge-offs using vintage analysis and FICO score segmentation. This project analyzes historical loan performance data from 2014 onwards and provides forward-looking projections for credit risk management with quality mix analysis.

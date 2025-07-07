@@ -112,6 +112,16 @@ if df is not None:
     ax.set_ylabel("Cumulative Charge-off Rate")
     ax.legend()
     st.pyplot(fig)
+    st.subheader("Cumulative Gross Charge-off % by FICO Band and Vintage (Analysis)")
+    st.dataframe(analyzer.get_cumulative_gross_chargeoff_summary())
+
+    # Show mature vintage performance
+    st.subheader("Mature Vintage Performance Table (Final CGCO%)")
+    st.dataframe(analyzer.get_mature_vintage_performance())
+
+    # Show forecast focus vintages
+    st.subheader("Forecast Focus Vintages (last 5 years, quarterly)")
+    st.write(analyzer.get_forecast_focus_vintages())
 
 # --- 4. Forecasting ---
 st.header("4. Forecasting Future Charge-offs")
@@ -155,6 +165,8 @@ if df is not None:
     ax2.set_ylabel("Cumulative Charge-off Rate")
     ax2.legend()
     st.pyplot(fig2)
+    st.subheader("Cumulative Gross Charge-off % by FICO Band and Vintage (Forecast)")
+    st.dataframe(forecaster.get_cumulative_gross_chargeoff_forecast(forecast))
 
 # --- 5. Model Performance Metrics ---
 st.header("5. Model Performance Metrics and Comparison")
