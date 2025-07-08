@@ -40,13 +40,15 @@ query = '''
 SELECT
     loan_id,
     vintage_date,
+    report_date,
     seasoning_month,
     fico_score,
     loan_amount,
     charge_off_flag,
     charge_off_amount,
     outstanding_balance,
-    term
+    term,
+    interest_rate
 FROM your_database.your_schema.your_loan_performance_table
 WHERE vintage_date >= '2018-01-01'
 '''
