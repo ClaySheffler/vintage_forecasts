@@ -38,25 +38,25 @@ FOCUS_YEARS = 5
 # Edit your query as needed
 query = '''
 SELECT
-    loan_id,
-    vintage_date,
-    report_date,
-    seasoning_month,
-    fico_score,
-    loan_amount,
-    charge_off_flag,
-    charge_off_amount,
-    outstanding_balance,
-    term,
-    interest_rate
+    LOAN_ID,
+    VINTAGE_DATE,
+    REPORT_DATE,
+    SEASONING_MONTH,
+    FICO_SCORE,
+    LOAN_AMOUNT,
+    CHARGE_OFF_FLAG,
+    CHARGE_OFF_AMOUNT,
+    OUTSTANDING_BALANCE,
+    TERM,
+    INTEREST_RATE
 FROM your_database.your_schema.your_loan_performance_table
-WHERE vintage_date >= '2018-01-01'
+WHERE VINTAGE_DATE >= '2018-01-01'
 '''
 
 session = get_active_session()
-df = session.sql(query).to_pandas()
-print(f'Loaded {len(df):,} records from Snowflake.')
-df.head()
+DF = session.sql(query).to_pandas()
+print(f'Loaded {len(DF):,} records from Snowflake.')
+DF.head()
 
 # %% [markdown]
 # ## 3. FICO Band Assignment and Flexible Data Handling
@@ -70,14 +70,14 @@ def assign_fico_band(fico):
     elif fico >= 600: return '600-649'
     else: return '<600'
 
-df['fico_band'] = df['fico_score'].apply(assign_fico_band)
-df = df.dropna(subset=['loan_id', 'vintage_date', 'seasoning_month', 'fico_score', 'loan_amount'])
-df['vintage_date'] = pd.to_datetime(df['vintage_date'])
+DF['fico_band'] = DF['fico_score'].apply(assign_fico_band)
+DF = DF.dropna(subset=['loan_id', 'vintage_date', 'seasoning_month', 'fico_score', 'loan_amount'])
+DF['vintage_date'] = pd.to_datetime(DF['vintage_date'])
 
 # Flexible data handling: auto-complete missing seasoning months for each loan
-all_months = df.groupby('loan_id')['seasoning_month'].max().to_dict()
+all_months = DF.groupby('loan_id')['seasoning_month'].max().to_dict()
 rows = []
-for loan_id, group in df.groupby('loan_id'):
+for loan_id, group in DF.groupby('loan_id'):
     max_month = all_months[loan_id]
     for m in range(0, max_month+1):
         if m in group['seasoning_month'].values:
@@ -89,29 +89,29 @@ for loan_id, group in df.groupby('loan_id'):
             row['charge_off_amount'] = 0
             row['outstanding_balance'] = np.nan
         rows.append(row)
-df_flex = pd.DataFrame(rows)
-df_flex = df_flex.sort_values(['loan_id', 'seasoning_month'])
-print('Flexible data shape:', df_flex.shape)
+DF_FLEX = pd.DataFrame(rows)
+DF_FLEX = DF_FLEX.sort_values(['loan_id', 'seasoning_month'])
+print('Flexible data shape:', DF_FLEX.shape)
 
 # %% [markdown]
 # ## 4. Vintage Analysis and Cumulative Gross Charge-off %
 
 # %%
-vintage_metrics = df_flex.groupby(['vintage_date', 'fico_band', 'seasoning_month']).agg({
+VINTAGE_METRICS = DF_FLEX.groupby(['vintage_date', 'fico_band', 'seasoning_month']).agg({
     'loan_amount': 'sum',
     'outstanding_balance': 'sum',
     'charge_off_amount': 'sum',
     'loan_id': 'count'
 }).reset_index()
-vintage_metrics['charge_off_flag'] = vintage_metrics['charge_off_amount'] / vintage_metrics['outstanding_balance']
-vintage_metrics['cumulative_charge_off_flag'] = (
-    vintage_metrics.groupby(['vintage_date', 'fico_band'])['charge_off_amount'].cumsum() /
-    vintage_metrics.groupby(['vintage_date', 'fico_band'])['loan_amount'].first()
+VINTAGE_METRICS['charge_off_flag'] = VINTAGE_METRICS['charge_off_amount'] / VINTAGE_METRICS['outstanding_balance']
+VINTAGE_METRICS['cumulative_charge_off_flag'] = (
+    VINTAGE_METRICS.groupby(['vintage_date', 'fico_band'])['charge_off_amount'].cumsum() /
+    VINTAGE_METRICS.groupby(['vintage_date', 'fico_band'])['loan_amount'].first()
 )
 risk_grade_map = {band: FICO_BANDS[band]['risk_grade'] for band in FICO_BANDS}
-vintage_metrics['risk_grade'] = vintage_metrics['fico_band'].map(risk_grade_map)
-vintage_metrics['vintage_quarter'] = vintage_metrics['vintage_date'].dt.to_period('Q').dt.start_time
-vintage_metrics.head()
+VINTAGE_METRICS['risk_grade'] = VINTAGE_METRICS['fico_band'].map(risk_grade_map)
+VINTAGE_METRICS['vintage_quarter'] = VINTAGE_METRICS['vintage_date'].dt.to_period('Q').dt.start_time
+VINTAGE_METRICS.head()
 
 # %% [markdown]
 # ## 5. Curve Fitting: Weibull, Lognormal, Gompertz, Linear, Ensemble
@@ -138,8 +138,8 @@ def fit_curve(curve_func, x, y, p0, bounds):
 
 # Fit curves for each FICO band
 fit_results = {}
-for band in vintage_metrics['fico_band'].unique():
-    band_data = vintage_metrics[(vintage_metrics['fico_band'] == band) & (vintage_metrics['seasoning_month'] >= 6)]
+for band in VINTAGE_METRICS['fico_band'].unique():
+    band_data = VINTAGE_METRICS[(VINTAGE_METRICS['fico_band'] == band) & (VINTAGE_METRICS['seasoning_month'] >= 6)]
     x = band_data['seasoning_month'].values
     y = band_data['cumulative_charge_off_flag'].values
     results = {}
@@ -170,8 +170,8 @@ for band, models in fit_results.items():
                 'Explainability': 'High' if name in ['linear', 'weibull', 'lognormal', 'gompertz'] else 'Medium',
                 'Notes': ''
             })
-model_df = pd.DataFrame(model_table)
-print(model_df)
+MODEL_DF = pd.DataFrame(model_table)
+print(MODEL_DF)
 
 # %% [markdown]
 # ## 6. Simple Scaling and Additive Forecast Methods
@@ -191,7 +191,7 @@ def additive_method(observed_month, observed_cum_co, typical_incremental_co, max
 
 # Example usage: (for a given band)
 band = list(fit_results.keys())[0]
-band_data = vintage_metrics[(vintage_metrics['fico_band'] == band) & (vintage_metrics['seasoning_month'] >= 6)]
+band_data = VINTAGE_METRICS[(VINTAGE_METRICS['fico_band'] == band) & (VINTAGE_METRICS['seasoning_month'] >= 6)]
 typical_cum_co = dict(zip(band_data['seasoning_month'], band_data['cumulative_charge_off_flag']))
 typical_incremental_co = {m: typical_cum_co.get(m, 0) - typical_cum_co.get(m-1, 0) for m in typical_cum_co}
 observed_month = 24
@@ -229,11 +229,11 @@ print('Scenario Forecasts (Cumulative Gross CO% at 60 months):', scenario_result
 
 # %%
 # For each forecast focus vintage, forecast future charge-offs using best model
-focus_vintages = vintage_metrics['vintage_quarter'].drop_duplicates().tail(FOCUS_YEARS*4)  # last 5 years, quarterly
+focus_vintages = VINTAGE_METRICS['vintage_quarter'].drop_duplicates().tail(FOCUS_YEARS*4)  # last 5 years, quarterly
 forecast_horizon = 60
 forecast_table = []
 for vintage in focus_vintages:
-    for band in vintage_metrics['fico_band'].unique():
+    for band in VINTAGE_METRICS['fico_band'].unique():
         model = fit_results[band].get('ensemble') or fit_results[band].get('weibull')
         if model:
             months = np.arange(6, forecast_horizon+1)
@@ -243,9 +243,9 @@ for vintage in focus_vintages:
                 'fico_band': band,
                 'forecasted_cumulative_gross_chargeoff_pct': y_pred[-1]
             })
-forecast_df = pd.DataFrame(forecast_table)
+FORECAST_DF = pd.DataFrame(forecast_table)
 print('Forecasts for Recent Vintages:')
-print(forecast_df)
+print(FORECAST_DF)
 
 # %% [markdown]
 # ## 9. Export/Reporting
@@ -254,7 +254,7 @@ print(forecast_df)
 # Export mature performance and forecast tables to Excel
 with pd.ExcelWriter('vintage_forecast_outputs.xlsx') as writer:
     # You can add more sheets as needed
-    forecast_df.to_excel(writer, sheet_name='Forecasts', index=False)
+    FORECAST_DF.to_excel(writer, sheet_name='Forecasts', index=False)
 print('Exported results to vintage_forecast_outputs.xlsx')
 
 # %% [markdown]
@@ -263,7 +263,7 @@ print('Exported results to vintage_forecast_outputs.xlsx')
 # %%
 import seaborn as sns
 plt.figure(figsize=(12, 6))
-sns.lineplot(data=forecast_df, x='vintage_quarter', y='forecasted_cumulative_gross_chargeoff_pct', hue='fico_band', marker='o')
+sns.lineplot(data=FORECAST_DF, x='vintage_quarter', y='forecasted_cumulative_gross_chargeoff_pct', hue='fico_band', marker='o')
 plt.title('Forecasted Cumulative Gross Charge-off % for Recent Vintages')
 plt.ylabel('Forecasted CGCO%')
 plt.xlabel('Vintage Quarter')
@@ -277,8 +277,8 @@ plt.show()
 
 # %%
 # Check for any negative or >1 CGCO% values
-print('Any negative CGCO% in forecast_df?', (forecast_df['forecasted_cumulative_gross_chargeoff_pct'] < 0).any())
-print('Any CGCO% > 1 in forecast_df?', (forecast_df['forecasted_cumulative_gross_chargeoff_pct'] > 1).any())
+print('Any negative CGCO% in forecast_df?', (FORECAST_DF['forecasted_cumulative_gross_chargeoff_pct'] < 0).any())
+print('Any CGCO% > 1 in forecast_df?', (FORECAST_DF['forecasted_cumulative_gross_chargeoff_pct'] > 1).any())
 
 # %% [markdown]
 # ## 12. Visualization: Cumulative Gross Charge-off % Heatmap (Vintages x Seasoning Month)
@@ -287,7 +287,7 @@ print('Any CGCO% > 1 in forecast_df?', (forecast_df['forecasted_cumulative_gross
 import matplotlib.pyplot as plt
 import seaborn as sns
 # Prepare heatmap data (every 6 months up to 96)
-heatmap_data = vintage_metrics[(vintage_metrics['seasoning_month'] <= 96) & (vintage_metrics['seasoning_month'] % 6 == 0)]
+heatmap_data = VINTAGE_METRICS[(VINTAGE_METRICS['seasoning_month'] <= 96) & (VINTAGE_METRICS['seasoning_month'] % 6 == 0)]
 heatmap_pivot = heatmap_data.pivot_table(index='vintage_date', columns='seasoning_month', values='cumulative_charge_off_flag', aggfunc='mean')
 
 # Prepare forecasted data for the same grid
@@ -323,7 +323,7 @@ plt.show()
 
 # %%
 plt.figure(figsize=(14, 7))
-for vintage, group in vintage_metrics.groupby('vintage_date'):
+for vintage, group in VINTAGE_METRICS.groupby('vintage_date'):
     group = group[group['seasoning_month'] <= 96]
     last_actual_month = group['seasoning_month'].max()
     # Plot actuals
